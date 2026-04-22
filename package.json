@@ -1,0 +1,23 @@
+{
+  "name": "ts-architecture-template",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript architecture template environment setup",
+  "scripts": {
+    "test": "node ./scripts/run-tests.js",
+    "test:conformance": "node --test test/conformance",
+    "demo:onboarding": "node ./scripts/demo-onboarding.js",
+    "demo:provider-swap": "node ./scripts/demo-provider-swap.js",
+    "check": "npm run check:toolchain && npm run check:deps",
+    "check:toolchain": "node ./node_modules/typescript/bin/tsc --version",
+    "check:deps": "npm ls --depth=0",
+    "check:contracts": "node ./scripts/check-contracts.ts",
+    "check:imports": "node ./scripts/check-imports.ts",
+    "check:lockin": "node ./scripts/check-lockin.ts",
+    "acceptance:check": "node ./scripts/acceptance-check.ts",
+    "check:conformance": "npm run check:contracts && npm run check:imports && npm run check:lockin && npm run test:conformance"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

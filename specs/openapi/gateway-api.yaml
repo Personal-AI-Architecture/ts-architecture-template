@@ -1,0 +1,187 @@
+openapi: 3.1.0
+info:
+  title: Gateway API
+  version: 1.0.0
+  description: External client-facing API for messaging and conversation lifecycle.
+paths:
+  /chat:
+    post:
+      operationId: createConversationMessage
+      summary: Send a message and start a new conversation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicGatewayMessageRequest'
+      responses:
+        '200':
+          description: Streaming response.
+          headers:
+            X-Conversation-ID:
+              description: Stable conversation identifier for this stream.
+              required: true
+              schema:
+                type: string
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/GatewayStreamEvent'
+  /conversations:
+    get:
+      operationId: listConversations
+      summary: List conversation summaries.
+      responses:
+        '200':
+          description: Conversation list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - conversations
+                properties:
+                  conversations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConversationSummary'
+                additionalProperties: false
+  /conversations/{conversation_id}:
+    get:
+      operationId: getConversation
+      summary: Retrieve conversation detail and history.
+      parameters:
+        - in: path
+          name: conversation_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Conversation detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationDetail'
+  /conversations/{conversation_id}/messages:
+    post:
+      operationId: appendConversationMessage
+      summary: Send a message to an existing conversation.
+      parameters:
+        - in: path
+          name: conversation_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicGatewayMessageRequest'
+      responses:
+        '200':
+          description: Streaming response.
+          headers:
+            X-Conversation-ID:
+              description: Stable conversation identifier for this stream.
+              required: true
+              schema:
+                type: string
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/GatewayStreamEvent'
+components:
+  schemas:
+    PublicGatewayMessageRequest:
+      type: object
+      required:
+        - content
+        - metadata
+      properties:
+        content:
+          type: string
+          minLength: 1
+        metadata:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    CompletionPayload:
+      type: object
+      required:
+        - conversation_id
+        - message_id
+      properties:
+        conversation_id:
+          type: string
+        message_id:
+          type: string
+      additionalProperties: false
+    GatewayStreamEvent:
+      type: object
+      required:
+        - event
+      properties:
+        event:
+          type: string
+          enum:
+            - text-delta
+            - tool-call
+            - tool-result
+            - approval-request
+            - approval-result
+            - done
+            - error
+        data:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    ConversationSummary:
+      type: object
+      required:
+        - conversation_id
+        - created_at
+        - updated_at
+      properties:
+        conversation_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    ConversationMessage:
+      type: object
+      required:
+        - message_id
+        - role
+        - content
+      properties:
+        message_id:
+          type: string
+        role:
+          type: string
+          enum:
+            - system
+            - user
+            - assistant
+            - tool
+        content:
+          type: string
+      additionalProperties: true
+    ConversationDetail:
+      type: object
+      required:
+        - conversation_id
+        - messages
+      properties:
+        conversation_id:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessage'
+      additionalProperties: false

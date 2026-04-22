@@ -1,0 +1,52 @@
+name: Template CI Gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate-template:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: node ./node_modules/typescript/bin/tsc --noEmit
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Integration tests
+        run: node --test test/integration
+
+      - name: Conformance tests
+        run: npm run test:conformance
+
+      - name: Contract checks
+        run: node ./scripts/check-contracts.ts
+
+      - name: Boundary import checks
+        run: node ./scripts/check-imports.ts
+
+      - name: Lock-in checks
+        run: node ./scripts/check-lockin.ts
+
+      - name: Acceptance check
+        run: node ./scripts/acceptance-check.ts

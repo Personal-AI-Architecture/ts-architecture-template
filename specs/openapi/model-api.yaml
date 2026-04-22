@@ -1,0 +1,128 @@
+openapi: 3.1.0
+info:
+  title: Model API
+  version: 1.0.0
+  description: Adapter-facing model provider request contract.
+paths:
+  /model/chat/completions:
+    post:
+      operationId: createModelChatCompletion
+      summary: Send model messages and tool definitions with streaming enabled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelChatRequest'
+      responses:
+        '200':
+          description: Provider stream payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelStreamChunk'
+components:
+  schemas:
+    ModelChatRequest:
+      type: object
+      required:
+        - messages
+        - tools
+        - stream
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolDefinition'
+        stream:
+          type: boolean
+          const: true
+      additionalProperties: false
+    Message:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          $ref: '#/components/schemas/MessageRole'
+        content:
+          type: string
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolCall'
+        tool_call_id:
+          type: string
+      additionalProperties: false
+    MessageRole:
+      type: string
+      enum:
+        - system
+        - user
+        - assistant
+        - tool
+    ToolDefinition:
+      type: object
+      required:
+        - type
+        - function
+      properties:
+        type:
+          type: string
+          const: function
+        function:
+          type: object
+          required:
+            - name
+            - description
+            - parameters
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+            parameters:
+              type: object
+              additionalProperties: true
+          additionalProperties: false
+      additionalProperties: false
+    ToolCall:
+      type: object
+      required:
+        - id
+        - type
+        - function
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          const: function
+        function:
+          type: object
+          required:
+            - name
+            - arguments
+          properties:
+            name:
+              type: string
+            arguments:
+              type: string
+          additionalProperties: false
+      additionalProperties: false
+    ModelStreamChunk:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+        delta:
+          type: object
+          additionalProperties: true
+      additionalProperties: true

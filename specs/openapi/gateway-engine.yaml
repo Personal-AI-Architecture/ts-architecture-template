@@ -1,0 +1,81 @@
+openapi: 3.1.0
+info:
+  title: Gateway Engine Internal Contract
+  version: 1.0.0
+  description: Internal Gateway-to-Agent-Loop streaming contract.
+paths:
+  /engine/chat:
+    post:
+      operationId: engineChat
+      summary: Execute one internal agent-loop chat turn.
+      parameters:
+        - in: header
+          name: X-Actor-ID
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Actor-Permissions
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EngineChatRequest'
+      responses:
+        '200':
+          description: Streamed engine events.
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/EngineStreamEvent'
+components:
+  schemas:
+    EngineChatRequest:
+      type: object
+      required:
+        - messages
+        - metadata
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '../schemas/message.json'
+        metadata:
+          $ref: '#/components/schemas/EngineRequestMetadata'
+      additionalProperties: false
+    EngineRequestMetadata:
+      type: object
+      required:
+        - correlation_id
+      properties:
+        correlation_id:
+          type: string
+        conversation_id:
+          type: string
+        trigger:
+          type: string
+        client_context:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    EngineStreamEvent:
+      type: object
+      required:
+        - event
+      properties:
+        event:
+          type: string
+          enum:
+            - text-delta
+            - tool-call
+            - tool-result
+            - done
+            - error
+        data:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
