@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "TypeScript architecture template environment setup",
+  "engines": {
+    "node": ">=20 <21"
+  },
   "scripts": {
     "test": "node ./scripts/run-tests.js",
     "test:conformance": "node --test test/conformance",

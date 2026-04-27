@@ -9,6 +9,37 @@ This repository is a contract-first scaffold for a four-component architecture:
 
 It enforces API contracts, import boundaries, and lock-in checks so provider/tool changes stay config-driven.
 
+## Create A New Repo From This Template (Preferred)
+
+Use GitHub's template flow instead of `git clone` so your new project starts clean.
+
+### GitHub UI
+
+1. Open this repository on GitHub.
+2. Click `Use this template` -> `Create a new repository`.
+3. Choose owner/name/visibility, then create the repo.
+4. Clone your new repo locally and start building.
+
+### If You Accidentally Cloned The Template
+
+Point your local `origin` at your own new repository:
+
+```bash
+git remote set-url origin https://github.com/<your-org>/<your-new-repo>.git
+git remote -v
+```
+
+### Post-Template Checklist
+
+After creating your new repository from this template:
+
+1. Rename package metadata in `package.json` (`name`, `description`, `version`).
+2. Pin runtime locally: `nvm use` (uses `.nvmrc`, Node 20).
+3. Install and validate: `npm ci && npm run check:conformance && npm run acceptance:check`.
+4. Configure required secrets/variables for your target provider (if using non-mock adapters).
+5. Enable branch protection and required status checks on `main`.
+6. Replace architecture examples/branding text in `README.md` with your project specifics.
+
 ## 15-Minute Developer Onboarding
 
 ### 1) Install dependencies from a clean checkout
