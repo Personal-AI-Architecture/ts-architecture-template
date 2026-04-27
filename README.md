@@ -1,13 +1,17 @@
 # TypeScript Architecture Template
 
-This repository is a contract-first scaffold for a four-component architecture:
+A contract-first scaffold for building a personal AI system on the [Personal AI Architecture](https://personalaiarchitecture.org).
+
+Four components:
 
 - `memory`
 - `engine` (agent loop)
 - `gateway`
 - `auth`
 
-It enforces API contracts, import boundaries, and lock-in checks so provider/tool changes stay config-driven.
+This template enforces API contracts, import boundaries, and lock-in checks so provider/tool changes stay config-driven. To understand the architecture itself — components, contracts, principles, and the lock-in guarantees — see the [foundation spec](https://github.com/Personal-AI-Architecture/the-architecture/blob/main/docs/foundation-spec.md).
+
+For AI agents: start with [AGENT.md](AGENT.md) — component boundaries, contracts to preserve, and validation commands.
 
 ## Create A New Repo From This Template (Preferred)
 
@@ -40,7 +44,7 @@ After creating your new repository from this template:
 5. Enable branch protection and required status checks on `main`.
 6. Replace architecture examples/branding text in `README.md` with your project specifics.
 
-## 15-Minute Developer Onboarding
+## 5-Minute Developer Onboarding
 
 ### 1) Install dependencies from a clean checkout
 
