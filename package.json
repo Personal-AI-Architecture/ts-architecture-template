@@ -4,11 +4,11 @@
   "private": true,
   "description": "TypeScript architecture template environment setup",
   "engines": {
-    "node": ">=20 <21"
+    "node": ">=20"
   },
   "scripts": {
     "test": "node ./scripts/run-tests.js",
-    "test:conformance": "node --test test/conformance",
+    "test:conformance": "node --test test/conformance/*.test.js",
     "demo:onboarding": "node ./scripts/demo-onboarding.js",
     "demo:provider-swap": "node ./scripts/demo-provider-swap.js",
     "demo:chat-with-docs": "node ./scripts/demo-chat-with-docs.js",
