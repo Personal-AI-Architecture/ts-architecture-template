@@ -16,6 +16,7 @@ import {
 import { emitAuditLog } from "../types/audit";
 import { toErrorDiagnostics, toSafeClientMessage } from "../types/safety";
 import { type GatewayConversationStore } from "./conversation-store";
+import { STATIC_CHAT_HTML } from "./static-chat";
 
 export interface GatewayEngineHandlerRequest {
   method: string;
@@ -462,6 +463,14 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
     async handle(request: GatewayRouteRequest): Promise<GatewayRouteResponse> {
       const method = normalizeMethod(request?.method);
       const path = typeof request?.path === "string" ? request.path : "";
+
+      if (method === "GET" && path === "/") {
+        return {
+          status: 200,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+          body: STATIC_CHAT_HTML
+        };
+      }
 
       if (method === "POST" && path === "/chat") {
         return routeMessage(request);
