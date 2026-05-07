@@ -21,6 +21,7 @@
     "check:conformance": "npm run check:contracts && npm run check:imports && npm run check:lockin && npm run test:conformance"
   },
   "devDependencies": {
+    "@types/node": "^25.6.0",
     "typescript": "^5.9.3"
   }
 }
