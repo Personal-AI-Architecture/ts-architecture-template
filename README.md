@@ -13,6 +13,8 @@ This template enforces API contracts, import boundaries, and lock-in checks so p
 
 For AI agents: start with [AGENT.md](AGENT.md) — component boundaries, contracts to preserve, and validation commands.
 
+For building on the template: see [`prompts/README.md`](prompts/README.md) — a 5-step + loop workflow (interview → spec → build plan → execute → test → ↻ loop) you can hand to any coding agent.
+
 ## Create A New Repo From This Template (Preferred)
 
 Use GitHub's template flow instead of `git clone` so your new project starts clean.
