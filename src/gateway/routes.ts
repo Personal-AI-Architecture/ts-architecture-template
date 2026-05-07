@@ -50,6 +50,13 @@ export interface GatewayRoutes {
 export interface GatewayRoutesConfig {
   conversation_store: GatewayConversationStore;
   engine_handler: GatewayEngineHandler;
+  /**
+   * Optional override for the static HTML served by `GET /`. When omitted,
+   * the chat-with-docs UI is served (default behaviour). Each composition
+   * (entrypoint script) chooses which UI to serve via this knob — keeps
+   * routes.ts agnostic to the active project.
+   */
+  static_html?: string;
 }
 
 const STREAM_HEADERS: Record<string, string> = {
@@ -468,7 +475,7 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
         return {
           status: 200,
           headers: { "Content-Type": "text/html; charset=utf-8" },
-          body: STATIC_CHAT_HTML
+          body: config.static_html ?? STATIC_CHAT_HTML
         };
       }
 
