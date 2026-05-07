@@ -51,9 +51,3 @@ Thumbs.db
 
 # Local tooling/config
 .codex/
-
-# Runtime artifacts
-.runtime-memory/
-
-# Local symlink to BrainDrive Library prompts (T-541 pre-record only; do not commit)
-/prompts
