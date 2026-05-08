@@ -34,7 +34,7 @@ jobs:
         run: npm test
 
       - name: Integration tests
-        run: node --test test/integration
+        run: node --test test/integration/*.test.js
 
       - name: Conformance tests
         run: npm run test:conformance
