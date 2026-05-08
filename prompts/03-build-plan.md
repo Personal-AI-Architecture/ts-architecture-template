@@ -22,7 +22,7 @@ Standing context (do not drift from this):
 - Build target: the template repo we have open.
 - Reference: the personal-ai-architecture repo on my disk separately —
   ask me for the path if you don't already know it. Read its primers
-  under docs/ai/ before designing.
+  under docs/ai-agent-docs/ before designing.
 - Read the spec.md before designing.
 - Save the output as: build-plan.md (next to spec.md).
 

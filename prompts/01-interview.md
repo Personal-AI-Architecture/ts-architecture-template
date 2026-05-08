@@ -21,8 +21,8 @@ Standing context:
 - Build target: the template repo we have open.
 - Reference: the personal-ai-architecture repo on my disk separately —
   ask me for the path if you don't already know it. Read its primers
-  under docs/ai/ for architectural context. Don't drift from the
-  architecture; always match against the reference.
+  under docs/ai-agent-docs/ for architectural context. Don't drift from
+  the architecture; always match against the reference.
 
 Your task:
 1. Read the spec template at prompts/02-spec.md to understand what a
