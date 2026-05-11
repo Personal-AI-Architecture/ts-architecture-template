@@ -15,6 +15,8 @@ For AI agents: start with [AGENT.md](AGENT.md) — component boundaries, contrac
 
 For building on the template: see [`prompts/README.md`](prompts/README.md) — a 5-step + loop workflow (interview → spec → build plan → execute → test → ↻ loop) you can hand to any coding agent.
 
+For a complete worked example of that workflow — recorded interview, spec, build plan, full source, and a per-phase walkthrough — see [`chat-with-my-docs-example`](https://github.com/Personal-AI-Architecture/chat-with-my-docs-example).
+
 ## Create A New Repo From This Template (Preferred)
 
 Use GitHub's template flow instead of `git clone` so your new project starts clean.
