@@ -1,5 +1,7 @@
 # TypeScript Architecture Template
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A contract-first scaffold for building a personal AI system on the [Personal AI Architecture](https://personalaiarchitecture.org).
 
 Four components:
