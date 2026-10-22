@@ -30,13 +30,13 @@ async function runDemoOnboarding() {
 
     const response = await routes.handle({
       method: 'POST',
-      path: '/chat',
+      path: '/conversations/messages',
       headers: {
         'X-Actor-ID': 'dev-onboarding',
         'X-Actor-Permissions': 'memory:read,memory:write'
       },
       body: {
-        content: 'Summarize this architecture template.',
+        content: [{ type: "text", text: 'Summarize this architecture template.' }],
         metadata: {
           channel: 'readme-demo',
           correlation_id: 'corr-readme-demo-001'

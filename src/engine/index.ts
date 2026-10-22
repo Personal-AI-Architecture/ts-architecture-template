@@ -5,7 +5,9 @@ import {
   type ModelAdapter,
   type ModelChatRequest,
   type ToolCall,
-  type ToolDefinition
+  type ToolDefinition,
+  normalizeToolCall,
+  normalizeToolDefinition
 } from "../types/contracts";
 import { emitAuditLog } from "../types/audit";
 import { toErrorDiagnostics } from "../types/safety";
@@ -36,7 +38,6 @@ export interface EngineChatHandler {
 
 interface ToolCallState {
   id: string;
-  type: "function";
   name: string;
   arguments: string;
 }
@@ -53,14 +54,7 @@ function toStringValue(value: unknown): string {
 }
 
 function copyToolDefinitions(tools: ToolDefinition[]): ToolDefinition[] {
-  return tools.map((tool) => ({
-    type: "function",
-    function: {
-      name: tool.function.name,
-      description: tool.function.description,
-      parameters: tool.function.parameters
-    }
-  }));
+  return tools.map((tool) => normalizeToolDefinition(tool)).filter((tool): tool is ToolDefinition => Boolean(tool));
 }
 
 function copyMessages(messages: CanonicalMessage[]): CanonicalMessage[] {
@@ -69,14 +63,9 @@ function copyMessages(messages: CanonicalMessage[]): CanonicalMessage[] {
       return {
         role: "assistant",
         content: message.content,
-        tool_calls: message.tool_calls?.map((toolCall) => ({
-          id: toolCall.id,
-          type: "function",
-          function: {
-            name: toolCall.function.name,
-            arguments: toolCall.function.arguments
-          }
-        }))
+        tool_calls: message.tool_calls
+          ?.map((toolCall) => normalizeToolCall(toolCall))
+          .filter((toolCall): toolCall is ToolCall => Boolean(toolCall))
       };
     }
 
@@ -95,11 +84,12 @@ function copyMessages(messages: CanonicalMessage[]): CanonicalMessage[] {
   });
 }
 
-function toModelRequest(messages: CanonicalMessage[], tools: ToolDefinition[]): ModelChatRequest {
+function toModelRequest(messages: CanonicalMessage[], tools: ToolDefinition[], model?: string): ModelChatRequest {
   return {
     messages: copyMessages(messages),
     tools,
-    stream: true
+    stream: true,
+    ...(model ? { model } : {})
   };
 }
 
@@ -149,13 +139,12 @@ function parseActorPermissionsHeader(value: string | undefined): string[] {
 
 function initializeToolCallState(delta: Record<string, unknown>, fallbackId: string): ToolCallState {
   const id = toStringValue(delta.id).trim();
-  const name = toStringValue(delta.name);
-  const type = toStringValue(delta.type) === "function" ? "function" : "function";
-  const args = toStringValue(delta.arguments);
+  const source = asRecord(delta.function) ?? delta;
+  const name = toStringValue(source.name);
+  const args = toStringValue(source.arguments);
 
   return {
     id: id.length > 0 ? id : fallbackId,
-    type,
     name,
     arguments: args
   };
@@ -167,13 +156,12 @@ function mergeToolCallState(
   fallbackId: string
 ): ToolCallState {
   const id = toStringValue(delta.id).trim();
-  const name = toStringValue(delta.name);
-  const type = toStringValue(delta.type);
-  const args = toStringValue(delta.arguments);
+  const source = asRecord(delta.function) ?? delta;
+  const name = toStringValue(source.name);
+  const args = toStringValue(source.arguments);
 
   return {
     id: id.length > 0 ? id : current.id || fallbackId,
-    type: type === "function" ? "function" : current.type,
     name: name.length > 0 ? name : current.name,
     arguments: args.length > 0 ? `${current.arguments}${args}` : current.arguments
   };
@@ -211,14 +199,8 @@ function upsertToolCallState(toolCalls: ToolCallState[], delta: Record<string, u
 function toToolCalls(states: ToolCallState[]): ToolCall[] {
   return states
     .filter((state) => state.name.trim().length > 0)
-    .map((state) => ({
-      id: state.id,
-      type: "function",
-      function: {
-        name: state.name,
-        arguments: state.arguments
-      }
-    }));
+    .map((state) => normalizeToolCall({ id: state.id, name: state.name, arguments: state.arguments }))
+    .filter((toolCall): toolCall is ToolCall => Boolean(toolCall));
 }
 
 function appendAssistantMessage(messages: CanonicalMessage[], text: string, toolCalls: ToolCall[]): void {
@@ -249,7 +231,7 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
   return {
     async *run(request: EngineChatRequest): AsyncGenerator<EngineStreamEvent> {
       const messages = copyMessages(request.messages ?? []);
-      let nextModelRequest = toModelRequest(request.messages, configuredTools);
+      let nextModelRequest = toModelRequest(request.messages, configuredTools, request.model);
 
       while (true) {
         let assistantText = "";
@@ -273,7 +255,7 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
 
             if (chunk.type === "text-delta") {
               const data = asRecord(chunk.delta) ?? {};
-              const text = toStringValue(data.text);
+              const text = toStringValue(data.content) || toStringValue(data.text);
               assistantText += text;
             }
 
@@ -284,9 +266,12 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
                 event: "tool-call",
                 data: {
                   id: next.id,
-                  type: next.type,
                   name: next.name,
-                  arguments: next.arguments
+                  arguments: normalizeToolCall({
+                    id: next.id,
+                    name: next.name,
+                    arguments: next.arguments
+                  })?.arguments ?? {}
                 }
               };
               continue;
@@ -337,7 +322,7 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
         let hasFailure = false;
 
         for (const result of executionResults) {
-          const toolName = result.tool_call.function.name;
+          const toolName = result.tool_call.name;
           const toolCallId = result.tool_call.id;
           const approvalFields = {
             ...(result.approval_request ? { approval_request: result.approval_request } : {}),
@@ -382,7 +367,7 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
           return;
         }
 
-        nextModelRequest = toModelRequest(messages, configuredTools);
+        nextModelRequest = toModelRequest(messages, configuredTools, request.model);
       }
     }
   };
@@ -394,7 +379,7 @@ export function createEngineChatHandler(config: AgentLoopConfig): EngineChatHand
   return {
     async *handle(request: EngineChatHandlerRequest): AsyncGenerator<EngineStreamEvent> {
       const method = typeof request?.method === "string" ? request.method.toUpperCase() : "";
-      if (method !== "POST" || request?.path !== "/engine/chat") {
+      if (method !== "POST" || request?.path !== "/agent-loop/chat") {
         yield createErrorEvent("provider_error", "Invalid engine chat endpoint request.");
         return;
       }
@@ -411,6 +396,15 @@ export function createEngineChatHandler(config: AgentLoopConfig): EngineChatHand
 
       const actorId = readHeaderValue(request.headers, "X-Actor-ID");
       const actorPermissions = readHeaderValue(request.headers, "X-Actor-Permissions");
+      const authContext = asRecord(request.body.auth_context);
+      const actor = asRecord(authContext?.actor);
+      if (
+        typeof request.body.model !== "string" || request.body.model.trim().length === 0 ||
+        actor?.id !== actorId || authContext?.correlation_id !== request.body.metadata.correlation_id
+      ) {
+        yield createErrorEvent("provider_error", "Invalid model or authenticated actor context.");
+        return;
+      }
       const bodyWithActorMetadata: EngineChatRequest = {
         ...request.body,
         metadata: {

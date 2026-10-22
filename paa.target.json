@@ -1,0 +1,30 @@
+{
+  "name": "ts-architecture-template",
+  "language": "typescript",
+  "root": ".",
+  "contracts": {
+    "lock_file": "paa.lock.json"
+  },
+  "commands": [
+    {
+      "name": "typecheck",
+      "command": "npm exec -- tsc --noEmit"
+    },
+    {
+      "name": "unit",
+      "command": "npm test"
+    },
+    {
+      "name": "integration",
+      "command": "node --test test/integration/*.test.js"
+    },
+    {
+      "name": "conformance",
+      "command": "npm run check:conformance"
+    },
+    {
+      "name": "acceptance",
+      "command": "npm run acceptance:check"
+    }
+  ]
+}

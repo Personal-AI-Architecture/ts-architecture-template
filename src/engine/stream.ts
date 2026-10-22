@@ -64,13 +64,17 @@ export function createToolResultEvent(data: Record<string, unknown>): EngineStre
 }
 
 export function createDoneEvent(data?: Record<string, unknown>): EngineStreamEvent {
-  if (!data) {
-    return { event: "done" };
-  }
+  const finishReason =
+    (typeof data?.finish_reason === "string" && data.finish_reason) ||
+    (typeof data?.reason === "string" && data.reason) ||
+    "stop";
 
   return {
     event: "done",
-    data
+    data: {
+      ...(data ?? {}),
+      finish_reason: finishReason
+    }
   };
 }
 
@@ -127,7 +131,10 @@ export function toStreamEventFromModelChunk(chunk: ModelStreamChunk): EngineStre
   const data = asRecord(chunk.delta) ?? {};
 
   if (chunk.type === "text-delta") {
-    return createTextDeltaEvent(data);
+    return createTextDeltaEvent({
+      ...data,
+      content: typeof data.content === "string" ? data.content : data.text
+    });
   }
 
   if (chunk.type === "tool-call") {

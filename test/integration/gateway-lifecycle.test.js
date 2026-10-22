@@ -113,10 +113,10 @@ test("gateway server handles authenticated conversation lifecycle", async () => 
 
     const unauthorized = await server.handle({
       method: "POST",
-      path: "/chat",
+      path: "/conversations/messages",
       headers: {},
       body: {
-        content: "hello",
+        content: [{ type: "text", text: "hello" }],
         metadata: {}
       }
     });
@@ -124,12 +124,12 @@ test("gateway server handles authenticated conversation lifecycle", async () => 
 
     const firstResponse = await server.handle({
       method: "POST",
-      path: "/chat",
+      path: "/conversations/messages",
       headers: {
         authorization: "Bearer gateway-token"
       },
       body: {
-        content: "First question",
+        content: [{ type: "text", text: "First question" }],
         metadata: {
           channel: "integration"
         }
@@ -143,7 +143,7 @@ test("gateway server handles authenticated conversation lifecycle", async () => 
     const firstEvents = await collectEvents(firstResponse.stream);
     const firstDone = firstEvents[firstEvents.length - 1];
     assert.equal(firstDone.event, "done");
-    assert.equal(firstDone.data.conversation_id, conversationId);
+    assert.equal(firstDone.data.finish_reason, "stop");
     assert.ok(typeof firstDone.data.message_id === "string");
 
     const secondResponse = await server.handle({
@@ -153,7 +153,7 @@ test("gateway server handles authenticated conversation lifecycle", async () => 
         authorization: "Bearer gateway-token"
       },
       body: {
-        content: "Second question",
+        content: [{ type: "text", text: "Second question" }],
         metadata: {
           channel: "integration"
         }
@@ -165,7 +165,7 @@ test("gateway server handles authenticated conversation lifecycle", async () => 
     const secondEvents = await collectEvents(secondResponse.stream);
     const secondDone = secondEvents[secondEvents.length - 1];
     assert.equal(secondDone.event, "done");
-    assert.equal(secondDone.data.conversation_id, conversationId);
+    assert.equal(secondDone.data.finish_reason, "stop");
     assert.ok(typeof secondDone.data.message_id === "string");
 
     const listResponse = await server.handle({
@@ -177,7 +177,8 @@ test("gateway server handles authenticated conversation lifecycle", async () => 
     });
     assert.equal(listResponse.status, 200);
     assert.equal(listResponse.body.conversations.length, 1);
-    assert.equal(listResponse.body.conversations[0].conversation_id, conversationId);
+    assert.equal(listResponse.body.conversations[0].id, conversationId);
+    assert.equal(listResponse.body.total, 1);
 
     const detailResponse = await server.handle({
       method: "GET",
@@ -188,14 +189,15 @@ test("gateway server handles authenticated conversation lifecycle", async () => 
     });
 
     assert.equal(detailResponse.status, 200);
+    assert.equal(detailResponse.body.id, conversationId);
     assert.equal(detailResponse.body.messages.length, 4);
-    assert.equal(detailResponse.body.messages[0].content, "First question");
-    assert.equal(detailResponse.body.messages[1].content, "First answer.");
-    assert.equal(detailResponse.body.messages[2].content, "Second question");
-    assert.equal(detailResponse.body.messages[3].content, "Second answer.");
+    assert.deepEqual(detailResponse.body.messages[0].content, [{ type: "text", text: "First question" }]);
+    assert.deepEqual(detailResponse.body.messages[1].content, [{ type: "text", text: "First answer." }]);
+    assert.deepEqual(detailResponse.body.messages[2].content, [{ type: "text", text: "Second question" }]);
+    assert.deepEqual(detailResponse.body.messages[3].content, [{ type: "text", text: "Second answer." }]);
 
     assert.equal(engine.calls.length, 2);
-    assert.equal(engine.calls[0].path, "/engine/chat");
+    assert.equal(engine.calls[0].path, "/agent-loop/chat");
     assert.equal(engine.calls[0].headers["X-Actor-ID"], "actor-integration");
     assert.equal(engine.calls[0].body.metadata.client_context.channel, "integration");
     assert.equal(engine.calls[0].body.metadata.conversation_id, conversationId);

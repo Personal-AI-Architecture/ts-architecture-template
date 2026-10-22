@@ -29,12 +29,9 @@ const { createAgentLoop, createEngineChatHandler } = require("../../src/engine/i
 const { createToolExecutor } = require("../../src/engine/tool-executor.ts");
 
 const configuredTool = {
-  type: "function",
-  function: {
-    name: "configured_tool",
-    description: "Configured tool",
-    parameters: { type: "object", properties: {} }
-  }
+  name: "configured_tool",
+  description: "Configured tool",
+  parameters: { type: "object", properties: {} }
 };
 
 function createRecordingAdapter(streamFactory) {
@@ -95,7 +92,7 @@ test("agent loop uses configured tools, not runtime metadata overrides", async (
 
   assert.equal(recording.calls.length, 1);
   assert.equal(recording.calls[0].tools.length, 1);
-  assert.equal(recording.calls[0].tools[0].function.name, "configured_tool");
+  assert.equal(recording.calls[0].tools[0].name, "configured_tool");
   assert.equal(events[0].event, "text-delta");
   assert.equal(events[events.length - 1].event, "done");
 });
@@ -346,7 +343,7 @@ test("agent loop emits approval semantics before tool_error on denied write tool
   assert.equal(events[2].data.code, "tool_error");
 });
 
-test("engine chat handler enforces internal POST /engine/chat semantics", async () => {
+test("engine chat handler enforces internal POST /agent-loop/chat semantics", async () => {
   const handler = createEngineChatHandler({
     model_adapter: createRecordingAdapter(() => [{ type: "done" }]).adapter,
     tools: []
@@ -355,7 +352,7 @@ test("engine chat handler enforces internal POST /engine/chat semantics", async 
   const missingHeaders = await collectEvents(
     handler.handle({
       method: "POST",
-      path: "/engine/chat",
+      path: "/agent-loop/chat",
       body: {
         messages: [{ role: "user", content: "hi" }],
         metadata: { correlation_id: "corr-6" }
@@ -370,14 +367,16 @@ test("engine chat handler enforces internal POST /engine/chat semantics", async 
   const ok = await collectEvents(
     handler.handle({
       method: "POST",
-      path: "/engine/chat",
+      path: "/agent-loop/chat",
       headers: {
         "X-Actor-ID": "actor-1",
         "X-Actor-Permissions": "memory:read"
       },
       body: {
         messages: [{ role: "user", content: "hi" }],
-        metadata: { correlation_id: "corr-7" }
+        metadata: { correlation_id: "corr-7" },
+        model: "mock",
+        auth_context: { actor: { id: "actor-1" }, correlation_id: "corr-7" }
       }
     })
   );

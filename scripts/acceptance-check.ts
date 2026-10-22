@@ -120,13 +120,13 @@ async function runMessageStreamPersistenceExportChecks() {
 
     const response = await routes.handle({
       method: "POST",
-      path: "/chat",
+      path: "/conversations/messages",
       headers: {
         "X-Actor-ID": "actor-acceptance",
         "X-Actor-Permissions": "memory:read,memory:write"
       },
       body: {
-        content: "Hello",
+        content: [{ type: "text", text: "Hello" }],
         metadata: {
           source: "acceptance"
         }
@@ -143,7 +143,7 @@ async function runMessageStreamPersistenceExportChecks() {
 
     const done = events[events.length - 1];
     assert.equal(done.event, "done");
-    assert.equal(done.data.conversation_id, response.headers["X-Conversation-ID"]);
+    assert.equal(done.data.finish_reason, "stop");
     assert.ok(typeof done.data.message_id === "string");
 
     const listResponse = await routes.handle({
@@ -153,12 +153,14 @@ async function runMessageStreamPersistenceExportChecks() {
     assert.equal(listResponse.status, 200);
     assert.equal(Array.isArray(listResponse.body.conversations), true);
     assert.equal(listResponse.body.conversations.length, 1);
+    assert.equal(listResponse.body.total, 1);
 
     const detailResponse = await routes.handle({
       method: "GET",
       path: `/conversations/${response.headers["X-Conversation-ID"]}`
     });
     assert.equal(detailResponse.status, 200);
+    assert.equal(detailResponse.body.id, response.headers["X-Conversation-ID"]);
     assert.equal(detailResponse.body.messages.length, 2);
     assert.equal(detailResponse.body.messages[0].role, "user");
     assert.equal(detailResponse.body.messages[1].role, "assistant");

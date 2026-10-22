@@ -73,10 +73,8 @@ function authErrorToResponse(error: unknown): GatewayRouteResponse {
       "Content-Type": "application/json"
     },
     body: {
-      error: {
-        code,
-        message
-      }
+      code,
+      message
     }
   };
 }
@@ -88,10 +86,8 @@ function serverErrorToResponse(): GatewayRouteResponse {
       "Content-Type": "application/json"
     },
     body: {
-      error: {
-        code: "internal_error",
-        message: "Gateway request failed."
-      }
+      code: "internal_error",
+      message: "Gateway request failed."
     }
   };
 }

@@ -61,7 +61,7 @@ test("auth middleware rejects unauthenticated protected requests", async () => {
         middleware(
           {
             method: "POST",
-            path: "/engine/chat",
+            path: "/agent-loop/chat",
             headers: {}
           },
           {
@@ -95,7 +95,7 @@ test("auth middleware authorizes request and attaches actor headers", async () =
 
     const request = {
       method: "POST",
-      path: "/engine/chat",
+      path: "/agent-loop/chat",
       headers: {
         authorization: "Bearer token-2"
       }
