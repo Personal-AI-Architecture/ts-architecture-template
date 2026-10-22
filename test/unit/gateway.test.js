@@ -78,21 +78,21 @@ test("gateway rejects public requests that include internal messages arrays", as
 
     const response = await routes.handle({
       method: "POST",
-      path: "/chat",
+      path: "/conversations/messages",
       headers: {
         "X-Actor-ID": "actor-1",
         "X-Actor-Permissions": "memory:read,memory:write"
       },
       body: {
-        content: "hello",
+        content: [{ type: "text", text: "hello" }],
         metadata: {},
-        messages: [{ role: "user", content: "bad" }]
+        messages: [{ role: "user", content: [{ type: "text", text: "bad" }] }]
       }
     });
 
     assert.equal(response.status, 400);
-    assert.equal(response.body.error.code, "invalid_request");
-    assert.match(response.body.error.message, /must not include a messages array/i);
+    assert.equal(response.body.code, "invalid_request");
+    assert.match(response.body.message, /must not include a messages array/i);
     assert.equal(engine.calls.length, 0);
   });
 });
@@ -113,13 +113,13 @@ test("gateway streams responses with conversation header and completion payload"
 
     const response = await routes.handle({
       method: "POST",
-      path: "/chat",
+      path: "/conversations/messages",
       headers: {
         "X-Actor-ID": "actor-1",
         "X-Actor-Permissions": "memory:read,memory:write"
       },
       body: {
-        content: "Hi",
+        content: [{ type: "text", text: "Hi" }],
         metadata: {
           topic: "contracts"
         }
@@ -135,13 +135,13 @@ test("gateway streams responses with conversation header and completion payload"
     const doneEvent = events[events.length - 1];
 
     assert.equal(doneEvent.event, "done");
-    assert.equal(doneEvent.data.conversation_id, conversationId);
+    assert.equal(doneEvent.data.finish_reason, "stop");
     assert.ok(typeof doneEvent.data.message_id === "string");
     assert.equal(doneEvent.data.provider, "mock");
 
     assert.equal(engine.calls.length, 1);
     assert.equal(engine.calls[0].method, "POST");
-    assert.equal(engine.calls[0].path, "/engine/chat");
+    assert.equal(engine.calls[0].path, "/agent-loop/chat");
     assert.equal(engine.calls[0].headers["X-Actor-ID"], "actor-1");
     assert.equal(engine.calls[0].headers["X-Actor-Permissions"], "memory:read,memory:write");
     assert.equal(engine.calls[0].body.metadata.conversation_id, conversationId);
@@ -154,21 +154,22 @@ test("gateway streams responses with conversation header and completion payload"
     });
     assert.equal(listResponse.status, 200);
     assert.equal(listResponse.body.conversations.length, 1);
-    assert.equal(listResponse.body.conversations[0].conversation_id, conversationId);
+    assert.equal(listResponse.body.conversations[0].id, conversationId);
+    assert.equal(listResponse.body.total, 1);
 
     const detailResponse = await routes.handle({
       method: "GET",
       path: `/conversations/${conversationId}`
     });
     assert.equal(detailResponse.status, 200);
-    assert.equal(detailResponse.body.conversation_id, conversationId);
+    assert.equal(detailResponse.body.id, conversationId);
     assert.equal(detailResponse.body.messages.length, 2);
     assert.equal(detailResponse.body.messages[0].role, "user");
-    assert.equal(detailResponse.body.messages[0].content, "Hi");
-    assert.ok(typeof detailResponse.body.messages[0].message_id === "string");
+    assert.deepEqual(detailResponse.body.messages[0].content, [{ type: "text", text: "Hi" }]);
+    assert.ok(typeof detailResponse.body.messages[0].id === "string");
     assert.equal(detailResponse.body.messages[1].role, "assistant");
-    assert.equal(detailResponse.body.messages[1].content, "Hello there.");
-    assert.ok(typeof detailResponse.body.messages[1].message_id === "string");
+    assert.deepEqual(detailResponse.body.messages[1].content, [{ type: "text", text: "Hello there." }]);
+    assert.ok(typeof detailResponse.body.messages[1].id === "string");
   });
 });
 
@@ -195,13 +196,13 @@ test("gateway supports appending to existing conversations using canonical route
 
     const createResponse = await routes.handle({
       method: "POST",
-      path: "/chat",
+      path: "/conversations/messages",
       headers: {
         "X-Actor-ID": "actor-2",
         "X-Actor-Permissions": "memory:read,memory:write"
       },
       body: {
-        content: "First message",
+        content: [{ type: "text", text: "First message" }],
         metadata: {}
       }
     });
@@ -217,7 +218,7 @@ test("gateway supports appending to existing conversations using canonical route
         "X-Actor-Permissions": "memory:read,memory:write"
       },
       body: {
-        content: "Second message",
+        content: [{ type: "text", text: "Second message" }],
         metadata: {}
       }
     });
@@ -227,7 +228,7 @@ test("gateway supports appending to existing conversations using canonical route
     const appendEvents = await collectEvents(appendResponse.stream);
     const doneEvent = appendEvents[appendEvents.length - 1];
     assert.equal(doneEvent.event, "done");
-    assert.equal(doneEvent.data.conversation_id, conversationId);
+    assert.equal(doneEvent.data.finish_reason, "stop");
 
     const detailResponse = await routes.handle({
       method: "GET",
@@ -235,7 +236,7 @@ test("gateway supports appending to existing conversations using canonical route
     });
     assert.equal(detailResponse.status, 200);
     assert.equal(detailResponse.body.messages.length, 4);
-    assert.equal(detailResponse.body.messages[3].content, "Second reply.");
+    assert.deepEqual(detailResponse.body.messages[3].content, [{ type: "text", text: "Second reply." }]);
   });
 });
 
@@ -279,7 +280,7 @@ test("gateway server can apply auth preprocessing before routing", async () => {
   assert.equal(routedRequest.headers["X-Actor-ID"], "auth-actor");
 });
 
-test("gateway surfaces approval-request and approval-result semantics from tool payloads", async () => {
+test("gateway keeps EXT-001 legacy /chat alias for approval payloads", async () => {
   await withTempMemoryRoot(async (memoryRoot) => {
     const memory = await createMemoryTools({ memory_root: memoryRoot });
     const store = createGatewayConversationStore({ memory });
@@ -322,7 +323,7 @@ test("gateway surfaces approval-request and approval-result semantics from tool 
         "X-Actor-Permissions": "memory:read,memory:write"
       },
       body: {
-        content: "Trigger tool write",
+        content: [{ type: "text", text: "Trigger tool write" }],
         metadata: {}
       }
     });
@@ -368,6 +369,6 @@ test("gateway server sanitizes auth errors for client responses", async () => {
   });
 
   assert.equal(response.status, 401);
-  assert.equal(response.body.error.code, "unauthorized");
-  assert.equal(response.body.error.message, "Request authorization failed.");
+  assert.equal(response.body.code, "unauthorized");
+  assert.equal(response.body.message, "Request authorization failed.");
 });

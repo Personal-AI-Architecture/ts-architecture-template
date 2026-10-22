@@ -9,7 +9,6 @@ import {
   type EngineActorHeaders,
   type EngineChatRequest,
   type EngineStreamEvent,
-  type GatewayCompletionPayload,
   type GatewayPublicMessageRequest,
   type GatewayStreamEvent
 } from "../types/contracts";
@@ -49,6 +48,7 @@ export interface GatewayRoutes {
 export interface GatewayRoutesConfig {
   conversation_store: GatewayConversationStore;
   engine_handler: GatewayEngineHandler;
+  current_model?: () => string;
 }
 
 const STREAM_HEADERS: Record<string, string> = {
@@ -177,26 +177,31 @@ function parsePublicMessageRequest(
   }
 
   const content = body.content;
-  if (typeof content !== "string" || content.trim().length === 0) {
+  if (!Array.isArray(content) || content.length === 0 || content.some((part) => {
+    if (!isObjectLike(part)) return true;
+    if (part.type === "text") return typeof part.text !== "string";
+    if (part.type === "image" || part.type === "file") return typeof part.url !== "string";
+    return true;
+  })) {
     return {
       ok: false,
-      message: "Public message request content must be a non-empty string."
+      message: "Public message request content must be a non-empty array of content parts."
     };
   }
 
   const metadata = body.metadata;
-  if (!isObjectLike(metadata)) {
+  if (metadata !== undefined && !isObjectLike(metadata)) {
     return {
       ok: false,
-      message: "Public message request metadata must be an object."
+      message: "Public message request metadata must be an object when provided."
     };
   }
 
   return {
     ok: true,
     value: {
-      content: content,
-      metadata: { ...metadata }
+      content: content as GatewayPublicMessageRequest["content"],
+      ...(metadata ? { metadata: { ...metadata } } : {})
     }
   };
 }
@@ -284,35 +289,30 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
     const parsed = parsePublicMessageRequest(request.body);
     if (!parsed.ok) {
       return createJsonResponse(400, {
-        error: {
-          code: "invalid_request",
-          message: parsed.message
-        }
+        code: "invalid_request",
+        message: parsed.message
       });
     }
 
     const actorHeaders = extractActorHeaders(request.headers);
     if (!actorHeaders) {
       return createJsonResponse(401, {
-        error: {
-          code: "missing_actor_headers",
-          message: "Missing required actor headers."
-        }
+        code: "missing_actor_headers",
+        message: "Missing required actor headers."
       });
     }
 
+    const requestMetadata = parsed.value.metadata ?? {};
     let conversationId = requestedConversationId;
     if (!conversationId) {
-      const created = await config.conversation_store.createConversation(parsed.value.metadata);
+      const created = await config.conversation_store.createConversation(requestMetadata);
       conversationId = created.conversation_id;
     } else {
       const exists = await config.conversation_store.hasConversation(conversationId);
       if (!exists) {
         return createJsonResponse(404, {
-          error: {
-            code: "conversation_not_found",
-            message: `Conversation ${conversationId} was not found.`
-          }
+          code: "conversation_not_found",
+          message: `Conversation ${conversationId} was not found.`
         });
       }
     }
@@ -322,21 +322,28 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
       "user",
       parsed.value.content
     );
-    const correlationId = toCorrelationId(parsed.value.metadata);
+    const correlationId = toCorrelationId(requestMetadata);
 
     const engineRequest: GatewayEngineHandlerRequest = {
       method: "POST",
-      path: "/engine/chat",
+      path: "/agent-loop/chat",
       headers: {
         "X-Actor-ID": actorHeaders["X-Actor-ID"],
         "X-Actor-Permissions": actorHeaders["X-Actor-Permissions"]
       },
       body: {
         messages: userMessage.messages,
+        model: config.current_model?.() ?? "mock",
+        auth_context: {
+          actor: { id: actorHeaders["X-Actor-ID"], type: "owner", display_name: actorHeaders["X-Actor-ID"], status: "active", created: new Date().toISOString() },
+          authentication_id: createIdentifier("authn"),
+          authenticated_at: new Date().toISOString(),
+          correlation_id: correlationId
+        },
         metadata: {
           correlation_id: correlationId,
           conversation_id: conversationId,
-          client_context: parsed.value.metadata
+          client_context: requestMetadata
         }
       }
     };
@@ -349,11 +356,14 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
         for await (const engineEvent of config.engine_handler.handle(engineRequest)) {
           if (engineEvent.event === "text-delta") {
             const data = cloneEventData(engineEvent.data) ?? {};
-            const text = typeof data.text === "string" ? data.text : "";
+            const text = typeof data.text === "string" ? data.text : typeof data.content === "string" ? data.content : "";
             assistantContent += text;
             yield {
               event: "text-delta",
-              data
+              data: {
+                ...data,
+                content: text
+              }
             };
             continue;
           }
@@ -396,13 +406,12 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
             "assistant",
             assistantContent
           );
-          const completion: GatewayCompletionPayload = {
-            conversation_id: conversationId,
-            message_id: assistantMessage.message_id
-          };
           const completionData: Record<string, unknown> = {
-            conversation_id: completion.conversation_id,
-            message_id: completion.message_id
+            finish_reason:
+              typeof engineEvent.data?.finish_reason === "string" && engineEvent.data.finish_reason.length > 0
+                ? engineEvent.data.finish_reason
+                : "stop",
+            message_id: assistantMessage.message_id
           };
           emittedDone = true;
           yield {
@@ -422,13 +431,9 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
             "assistant",
             assistantContent
           );
-          const completion: GatewayCompletionPayload = {
-            conversation_id: conversationId,
-            message_id: assistantMessage.message_id
-          };
           const completionData: Record<string, unknown> = {
-            conversation_id: completion.conversation_id,
-            message_id: completion.message_id
+            finish_reason: "stop",
+            message_id: assistantMessage.message_id
           };
           yield {
             event: "done",
@@ -463,13 +468,16 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
       const method = normalizeMethod(request?.method);
       const path = typeof request?.path === "string" ? request.path : "";
 
-      if (method === "POST" && path === "/chat") {
+      if (method === "POST" && (path === "/conversations/messages" || path === "/chat")) {
         return routeMessage(request);
       }
 
       if (method === "GET" && path === "/conversations") {
         const conversations = await config.conversation_store.listConversations();
-        return createJsonResponse(200, { conversations });
+        return createJsonResponse(200, {
+          conversations,
+          total: conversations.length
+        });
       }
 
       const detailConversationId = conversationDetailPathConversationId(path);
@@ -477,10 +485,8 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
         const detail = await config.conversation_store.getConversationDetail(detailConversationId);
         if (!detail) {
           return createJsonResponse(404, {
-            error: {
-              code: "conversation_not_found",
-              message: `Conversation ${detailConversationId} was not found.`
-            }
+            code: "conversation_not_found",
+            message: `Conversation ${detailConversationId} was not found.`
           });
         }
         return createJsonResponse(200, detail);
@@ -492,10 +498,8 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
       }
 
       return createJsonResponse(404, {
-        error: {
-          code: "not_found",
-          message: "Gateway route not found."
-        }
+        code: "not_found",
+        message: "Gateway route not found."
       });
     }
   };

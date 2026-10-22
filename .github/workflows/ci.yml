@@ -27,8 +27,31 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Checkout accepted PAA source
+        uses: actions/checkout@v4
+        with:
+          repository: Personal-AI-Architecture/the-architecture
+          ref: main
+          fetch-depth: 0
+          path: paa-source
+
+      - name: Checkout shared PAA validator
+        uses: actions/checkout@v4
+        with:
+          repository: Personal-AI-Architecture/paa-conformance-validator
+          path: paa-validator
+
+      - name: Validate current PAA source and template commands
+        run: node paa-validator/bin/paa-validate.js --target paa.target.json --source-checkout paa-source --source-ref HEAD
+
       - name: Typecheck
         run: node ./node_modules/typescript/bin/tsc --noEmit
+
+      - name: Verify pinned PAA contracts
+        run: npm run check:paa
+
+      - name: Verify upstream PAA pin has not moved
+        run: npm run check:paa:remote
 
       - name: Unit tests
         run: npm test

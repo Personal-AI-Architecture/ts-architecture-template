@@ -69,59 +69,59 @@ test("gateway enforces public request shape and completion identifiers", async (
 
     const badMessagesRequest = await routes.handle({
       method: "POST",
-      path: "/chat",
+      path: "/conversations/messages",
       headers: {
         "X-Actor-ID": "actor-contract",
         "X-Actor-Permissions": "memory:read,memory:write"
       },
       body: {
-        content: "hello",
+        content: [{ type: "text", text: "hello" }],
         metadata: {},
-        messages: [{ role: "user", content: "not-allowed" }]
+        messages: [{ role: "user", content: [{ type: "text", text: "not-allowed" }] }]
       }
     });
 
     assert.equal(badMessagesRequest.status, 400);
-    assert.equal(badMessagesRequest.body.error.code, "invalid_request");
+    assert.equal(badMessagesRequest.body.code, "invalid_request");
 
     const badFieldRequest = await routes.handle({
       method: "POST",
-      path: "/chat",
+      path: "/conversations/messages",
       headers: {
         "X-Actor-ID": "actor-contract",
         "X-Actor-Permissions": "memory:read,memory:write"
       },
       body: {
-        content: "hello",
+        content: [{ type: "text", text: "hello" }],
         metadata: {},
         unexpected: true
       }
     });
 
     assert.equal(badFieldRequest.status, 400);
-    assert.equal(badFieldRequest.body.error.code, "invalid_request");
+    assert.equal(badFieldRequest.body.code, "invalid_request");
 
     const missingActorHeaders = await routes.handle({
       method: "POST",
-      path: "/chat",
+      path: "/conversations/messages",
       body: {
-        content: "hello",
+        content: [{ type: "text", text: "hello" }],
         metadata: {}
       }
     });
 
     assert.equal(missingActorHeaders.status, 401);
-    assert.equal(missingActorHeaders.body.error.code, "missing_actor_headers");
+    assert.equal(missingActorHeaders.body.code, "missing_actor_headers");
 
     const validResponse = await routes.handle({
       method: "POST",
-      path: "/chat",
+      path: "/conversations/messages",
       headers: {
         "X-Actor-ID": "actor-contract",
         "X-Actor-Permissions": "memory:read,memory:write"
       },
       body: {
-        content: "hello",
+        content: [{ type: "text", text: "hello" }],
         metadata: {
           source: "conformance"
         }
@@ -135,12 +135,12 @@ test("gateway enforces public request shape and completion identifiers", async (
     const events = await collectEvents(validResponse.stream);
     const doneEvent = events[events.length - 1];
     assert.equal(doneEvent.event, "done");
-    assert.equal(doneEvent.data.conversation_id, validResponse.headers["X-Conversation-ID"]);
+    assert.equal(doneEvent.data.finish_reason, "stop");
     assert.ok(typeof doneEvent.data.message_id === "string");
   });
 });
 
-test("gateway supports client route swap from /chat to /conversations/{id}/messages", async () => {
+test("gateway supports the PAA create route and conversation append route", async () => {
   await withTempMemoryRoot(async (memoryRoot) => {
     const memory = await createMemoryTools({ memory_root: memoryRoot });
     const store = createGatewayConversationStore({ memory });
@@ -157,13 +157,13 @@ test("gateway supports client route swap from /chat to /conversations/{id}/messa
 
     const first = await routes.handle({
       method: "POST",
-      path: "/chat",
+      path: "/conversations/messages",
       headers: {
         "X-Actor-ID": "actor-contract",
         "X-Actor-Permissions": "memory:read,memory:write"
       },
       body: {
-        content: "first",
+        content: [{ type: "text", text: "first" }],
         metadata: {
           client: "conformance"
         }
@@ -176,7 +176,7 @@ test("gateway supports client route swap from /chat to /conversations/{id}/messa
     const firstEvents = await collectEvents(first.stream);
     const firstDone = firstEvents[firstEvents.length - 1];
     assert.equal(firstDone.event, "done");
-    assert.equal(firstDone.data.conversation_id, conversationId);
+    assert.equal(firstDone.data.finish_reason, "stop");
     assert.ok(typeof firstDone.data.message_id === "string");
 
     const second = await routes.handle({
@@ -187,7 +187,7 @@ test("gateway supports client route swap from /chat to /conversations/{id}/messa
         "X-Actor-Permissions": "memory:read,memory:write"
       },
       body: {
-        content: "second",
+        content: [{ type: "text", text: "second" }],
         metadata: {
           client: "conformance"
         }
@@ -199,8 +199,47 @@ test("gateway supports client route swap from /chat to /conversations/{id}/messa
     const secondEvents = await collectEvents(second.stream);
     const secondDone = secondEvents[secondEvents.length - 1];
     assert.equal(secondDone.event, "done");
-    assert.equal(secondDone.data.conversation_id, conversationId);
+    assert.equal(secondDone.data.finish_reason, "stop");
     assert.ok(typeof secondDone.data.message_id === "string");
     assert.notEqual(secondDone.data.message_id, firstDone.data.message_id);
+  });
+});
+
+test("current PAA request uses content parts, a per-turn model, and authenticated context", async () => {
+  await withTempMemoryRoot(async (memoryRoot) => {
+    const memory = await createMemoryTools({ memory_root: memoryRoot });
+    const store = createGatewayConversationStore({ memory });
+    const handoffs = [];
+    let selectedModel = "model-one";
+    const routes = createGatewayRoutes({
+      conversation_store: store,
+      current_model: () => selectedModel,
+      engine_handler: {
+        async *handle(request) {
+          handoffs.push(request);
+          yield { event: "text-delta", data: { content: "ok" } };
+          yield { event: "done", data: { finish_reason: "stop" } };
+        }
+      }
+    });
+    const headers = { "X-Actor-ID": "owner", "X-Actor-Permissions": "memory:read,memory:write" };
+    const oldShape = await routes.handle({ method: "POST", path: "/conversations/messages", headers, body: { content: "old string" } });
+    assert.equal(oldShape.status, 400);
+
+    const first = await routes.handle({ method: "POST", path: "/conversations/messages", headers, body: { content: [{ type: "text", text: "hello" }] } });
+    assert.equal(first.status, 200);
+    await collectEvents(first.stream);
+    selectedModel = "model-two";
+    const second = await routes.handle({ method: "POST", path: `/conversations/${first.headers["X-Conversation-ID"]}/messages`, headers, body: { content: [{ type: "text", text: "again" }] } });
+    assert.equal(second.status, 200);
+    await collectEvents(second.stream);
+
+    assert.deepEqual(handoffs.map((request) => request.body.model), ["model-one", "model-two"]);
+    assert.deepEqual(handoffs.map((request) => request.path), ["/agent-loop/chat", "/agent-loop/chat"]);
+    assert.deepEqual(handoffs[0].body.messages[0].content, [{ type: "text", text: "hello" }]);
+    assert.equal(handoffs[0].body.auth_context.actor.id, "owner");
+    assert.equal(handoffs[0].body.auth_context.correlation_id, handoffs[0].body.metadata.correlation_id);
+    const detail = await routes.handle({ method: "GET", path: `/conversations/${first.headers["X-Conversation-ID"]}` });
+    assert.deepEqual(detail.body.messages[0].content, [{ type: "text", text: "hello" }]);
   });
 });

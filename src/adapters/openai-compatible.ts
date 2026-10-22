@@ -3,7 +3,9 @@ import {
   type ModelAdapter,
   type ModelChatRequest,
   type ModelStreamChunk,
-  type ToolDefinition
+  type ToolDefinition,
+  normalizeToolCall,
+  normalizeToolDefinition
 } from "../types/contracts";
 import { emitAuditLog } from "../types/audit";
 import { installOutboundNetworkGuard, withOutboundNetworkPermit } from "../types/network";
@@ -20,7 +22,7 @@ interface OpenAICompatibleToolCall {
 
 interface OpenAICompatibleMessage {
   role: string;
-  content: string;
+  content: string | unknown[];
   tool_calls?: OpenAICompatibleToolCall[];
   tool_call_id?: string;
 }
@@ -74,14 +76,17 @@ function mapMessage(message: CanonicalMessage): OpenAICompatibleMessage {
     return {
       role: message.role,
       content: message.content,
-      tool_calls: message.tool_calls?.map((toolCall) => ({
-        id: toolCall.id,
-        type: "function",
-        function: {
-          name: toolCall.function.name,
-          arguments: toolCall.function.arguments
-        }
-      }))
+      tool_calls: message.tool_calls
+        ?.map((toolCall) => normalizeToolCall(toolCall))
+        .filter((toolCall): toolCall is NonNullable<ReturnType<typeof normalizeToolCall>> => Boolean(toolCall))
+        .map((toolCall) => ({
+          id: toolCall.id,
+          type: "function",
+          function: {
+            name: toolCall.name,
+            arguments: JSON.stringify(toolCall.arguments)
+          }
+        }))
     };
   }
 
@@ -100,12 +105,17 @@ function mapMessage(message: CanonicalMessage): OpenAICompatibleMessage {
 }
 
 function mapTool(tool: ToolDefinition): OpenAICompatibleTool {
+  const normalized = normalizeToolDefinition(tool);
+  if (!normalized) {
+    throw new Error("Model request contains an invalid tool definition.");
+  }
+
   return {
     type: "function",
     function: {
-      name: tool.function.name,
-      description: tool.function.description,
-      parameters: tool.function.parameters
+      name: normalized.name,
+      description: normalized.description,
+      parameters: normalized.parameters
     }
   };
 }
@@ -190,7 +200,7 @@ export function mapModelRequestToOpenAIPayload(
   model: string
 ): OpenAICompatiblePayload {
   return {
-    model,
+    model: request.model || model,
     messages: request.messages.map((message) => mapMessage(message)),
     tools: request.tools.map((tool) => mapTool(tool)),
     stream: true
@@ -223,7 +233,7 @@ export function mapOpenAIChunkToModelChunk(payload: unknown): ModelStreamChunk |
 
   const finishReason = toStringValue(firstChoice.finish_reason);
   if (finishReason.length > 0) {
-    return { type: "done", delta: { reason: finishReason } };
+    return { type: "done", delta: { finish_reason: finishReason } };
   }
 
   const delta = asRecord(firstChoice.delta);
@@ -249,7 +259,6 @@ export function mapOpenAIChunkToModelChunk(payload: unknown): ModelStreamChunk |
       type: "tool-call",
       delta: {
         id: toStringValue(firstToolCall?.id),
-        type: toStringValue(firstToolCall?.type),
         name: toStringValue(functionRecord?.name),
         arguments: toStringValue(functionRecord?.arguments)
       }

@@ -1,7 +1,9 @@
 import {
   type EngineRequestMetadata,
   type ToolCall,
-  type ToolDefinition
+  type ToolDefinition,
+  normalizeToolCall,
+  normalizeToolDefinition
 } from "../types/contracts";
 import { createApprovalGate, type ApprovalEvaluation, type ApprovalGate } from "../types/approval";
 import { emitAuditLog } from "../types/audit";
@@ -54,18 +56,6 @@ interface RegisteredTool {
   required_permissions: string[];
 }
 
-function parseToolArguments(raw: string): unknown {
-  if (typeof raw !== "string" || raw.trim().length === 0) {
-    return {};
-  }
-
-  try {
-    return JSON.parse(raw);
-  } catch {
-    throw new Error("Tool call arguments must be valid JSON.");
-  }
-}
-
 function serializeToolOutput(value: unknown): string {
   if (typeof value === "string") {
     return value;
@@ -81,7 +71,7 @@ function serializeToolOutput(value: unknown): string {
 function configuredToolNames(tools: ToolDefinition[]): Set<string> {
   const names = new Set<string>();
   for (const tool of tools) {
-    const name = tool?.function?.name;
+    const name = normalizeToolDefinition(tool)?.name;
     if (typeof name === "string" && name.trim().length > 0) {
       names.add(name.trim());
     }
@@ -131,7 +121,7 @@ function inferMutatesState(tool: ToolDefinition): boolean {
     return true;
   }
 
-  const toolName = tool.function.name.toLowerCase();
+  const toolName = tool.name.toLowerCase();
   if (/(write|edit|delete|update|create|save|remove)/.test(toolName)) {
     return true;
   }
@@ -142,15 +132,16 @@ function inferMutatesState(tool: ToolDefinition): boolean {
 function buildRegistry(tools: ToolDefinition[]): Map<string, RegisteredTool> {
   const registry = new Map<string, RegisteredTool>();
   for (const tool of tools) {
-    const name = tool?.function?.name?.trim();
-    if (!name) {
+    const normalized = normalizeToolDefinition(tool);
+    const name = normalized?.name?.trim();
+    if (!normalized || !name) {
       continue;
     }
     registry.set(name, {
       name,
-      source: normalizeSource(tool.source) ?? inferSourceFromToolName(name),
-      mutates_state: inferMutatesState(tool),
-      required_permissions: normalizePermissions(tool.required_permissions)
+      source: normalizeSource(normalized.source) ?? inferSourceFromToolName(name),
+      mutates_state: inferMutatesState(normalized),
+      required_permissions: normalizePermissions(normalized.required_permissions)
     });
   }
   return registry;
@@ -269,8 +260,13 @@ export function createToolExecutor(config: ToolExecutorConfig): ToolExecutor {
       const actorPermissions = parseActorPermissions(context.metadata.actor_permissions);
       const allowedSources = resolveAllowedSources(configuredAllowedSources, context.metadata);
 
-      const jobs = toolCalls.map(async (toolCall): Promise<ToolExecutionResult> => {
-        const toolName = toolCall.function.name;
+      const jobs = toolCalls.map(async (rawToolCall): Promise<ToolExecutionResult> => {
+        const toolCall = normalizeToolCall(rawToolCall);
+        if (!toolCall) {
+          return toToolFailure(rawToolCall, "execution_failed");
+        }
+
+        const toolName = toolCall.name;
         const registeredTool = toolRegistry.get(toolName);
 
         emitAuditLog({
@@ -382,8 +378,11 @@ export function createToolExecutor(config: ToolExecutorConfig): ToolExecutor {
         }
 
         try {
-          const input = parseToolArguments(toolCall.function.arguments);
-          const output = await handler(input, context);
+          if (toolCall.invalid_arguments) {
+            return toToolFailure(toolCall, "execution_failed", approval);
+          }
+
+          const output = await handler(toolCall.arguments, context);
           emitAuditLog({
             category: "tool",
             action: "tool_call",

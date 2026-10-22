@@ -7,7 +7,7 @@ This document defines implementation boundaries for autonomous coding agents in 
 - `src/memory/*`
   - Owns persistence, conversation storage records, history, and export.
   - Must not depend on other components.
-- `src/engine/*`
+- `src/engine/*` (legacy path for the PAA Agent Loop)
   - Owns agent loop orchestration and tool execution.
   - Must not contain provider-specific transport logic.
 - `src/gateway/*`
@@ -28,28 +28,36 @@ This document defines implementation boundaries for autonomous coding agents in 
 
 When implementing, reviewing, or reconciling drift, use this order:
 
-1. `plan.md`
-2. `specs/openapi/gateway-api.yaml`
-3. `specs/openapi/gateway-engine.yaml`
-4. `specs/openapi/model-api.yaml`
-5. `specs/schemas/message.json`
-6. `scripts/check-contracts.ts`
-7. `scripts/check-imports.ts`
-8. `scripts/check-lockin.ts`
-9. `test/conformance/*`
+1. `paa.lock.json` and `vendor/paa-contracts/`
+2. `contracts/openapi/gateway-api.yaml`
+3. `contracts/openapi/gateway-engine.yaml`
+4. `contracts/openapi/model-api.yaml`
+5. `contracts/schemas/message.json`
+6. `scripts/check-paa-pin.ts`
+7. `scripts/check-contracts.ts`
+8. `scripts/check-imports.ts`
+9. `scripts/check-lockin.ts`
+10. `test/conformance/*`
+
+The shared language-neutral validator is staged at
+`../paa-templates/paa-conformance-validator/` in the workspace and consumes
+`paa.target.json` when run against this checkout.
 
 If examples diverge from contracts/checks, contracts and conformance checks are authoritative.
 
 ## Implementation Rules For Agents
 
-- Preserve public gateway request shape: `{ content, metadata }` only.
-- Preserve gateway stream contract including `X-Conversation-ID` and `done` payload identifiers (`conversation_id`, `message_id`).
-- Preserve the internal engine handoff contract: `POST /engine/chat` with required `metadata.correlation_id`.
+- Preserve the PAA public gateway request shape: `{ content, metadata? }` only.
+- Preserve the PAA gateway routes: `POST /conversations/messages`, `GET /conversations`,
+  `GET /conversations/{id}`, and `POST /conversations/{id}/messages`.
+- Preserve gateway stream contract including `X-Conversation-ID`, `finish_reason`,
+  and the assistant `message_id` in the `done` payload.
+- Preserve the PAA Agent Loop handoff contract: `POST /agent-loop/chat` with required `metadata.correlation_id`.
 - Do not introduce runtime provider/model/tool overrides in engine request metadata.
 - Keep provider/model swap behavior config-driven (`runtime.provider_adapter`, adapter config), not hardcoded in engine/gateway.
 - Keep import boundaries intact; no cross-component coupling outside allowed patterns in `scripts/check-imports.ts`.
 - Keep localhost-first boot defaults (`127.0.0.1`) and offline-capable local/mock path.
-- Keep lock-in and conformance checks meaningful; do not bypass scripts/tests to force green output.
+- Keep the PAA pin, contract mirror, lock-in, and conformance checks meaningful; do not bypass scripts/tests to force green output.
 
 ## Required Validation Before Finalizing Changes
 

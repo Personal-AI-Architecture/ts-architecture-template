@@ -14,11 +14,13 @@
     "check": "npm run check:toolchain && npm run check:deps",
     "check:toolchain": "node ./node_modules/typescript/bin/tsc --version",
     "check:deps": "npm ls --depth=0",
+    "check:paa": "node ./scripts/check-paa-pin.ts",
+    "check:paa:remote": "node ./scripts/check-paa-pin.ts --remote",
     "check:contracts": "node ./scripts/check-contracts.ts",
     "check:imports": "node ./scripts/check-imports.ts",
     "check:lockin": "node ./scripts/check-lockin.ts",
     "acceptance:check": "node ./scripts/acceptance-check.ts",
-    "check:conformance": "npm run check:contracts && npm run check:imports && npm run check:lockin && npm run test:conformance"
+    "check:conformance": "npm run check:paa && npm run check:contracts && npm run check:imports && npm run check:lockin && npm run test:conformance"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

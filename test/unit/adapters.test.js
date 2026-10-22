@@ -50,14 +50,11 @@ const basicRequest = {
 };
 
 const sampleTool = {
-  type: "function",
-  function: {
-    name: "lookup_weather",
-    description: "Look up weather",
-    parameters: {
-      type: "object",
-      properties: {}
-    }
+  name: "lookup_weather",
+  description: "Look up weather",
+  parameters: {
+    type: "object",
+    properties: {}
   }
 };
 
@@ -129,11 +126,8 @@ test("openai-compatible adapter maps model request shape", () => {
           tool_calls: [
             {
               id: "call-1",
-              type: "function",
-              function: {
-                name: "lookup_weather",
-                arguments: "{}"
-              }
+              name: "lookup_weather",
+              arguments: {}
             }
           ]
         },

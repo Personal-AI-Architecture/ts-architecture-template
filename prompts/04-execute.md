@@ -81,7 +81,7 @@ Process for each phase:
 Important behaviors:
 - Don't drift from the architecture. The drift-guards in
   `docs/blueprints/drift/` are explicit about prohibited patterns —
-  product-specific logic in the Engine, request metadata as hidden
+  product-specific logic in the Agent Loop, request metadata as hidden
   config, bypassing Auth, inlining provider logic in the loop, etc.
   Read them before each component you touch.
 - Don't skip tests-first ordering within a phase. Write the phase's
@@ -108,7 +108,7 @@ Don't skip layer 2. AI-generated code has higher logic-error rates than human-wr
 
 The user's job during execute is to watch, intervene when the agent goes off course, and run [`05-test.md`](05-test.md) after each phase.
 
-**Catching drift early:** if the agent starts writing JavaScript instead of TypeScript, invents a new component instead of using an existing one, or violates a pattern from the drift-guards (product-specific logic in the Engine, request metadata as runtime config, bypassing Auth, inlining provider logic in the loop), intervene fast. The earlier you catch it, the less rework. The drift-guards in `docs/blueprints/drift/` are the canonical list of what to watch for.
+**Catching drift early:** if the agent starts writing JavaScript instead of TypeScript, invents a new component instead of using an existing one, or violates a pattern from the drift-guards (product-specific logic in the Agent Loop, request metadata as runtime config, bypassing Auth, inlining provider logic in the loop), intervene fast. The earlier you catch it, the less rework. The drift-guards in `docs/blueprints/drift/` are the canonical list of what to watch for.
 
 **When the agent gets something wrong** (this is normal — real software is never built right on the first try):
 1. Show the error in the conversation. Don't hide it; don't quietly correct and move on. *"You're using the wrong contract here — it should be `MemoryWriteRequest` from `contracts/memory.ts`, not the inline shape you wrote."*

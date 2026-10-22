@@ -112,7 +112,7 @@ function checkEngineUsesConfiguredTools(engineSource, errors) {
     errors.push("Agent loop must derive tool list from configured tools.");
   }
 
-  if (!/toModelRequest\(request\.messages,\s*configuredTools\)/.test(engineSource)) {
+  if (!/toModelRequest\(request\.messages,\s*configuredTools,\s*request\.model\)/.test(engineSource)) {
     errors.push("Agent loop must send configured tools to model adapter.");
   }
 
@@ -343,8 +343,8 @@ async function checkToolSwapBehavior(errors) {
   const runA = await runWithTools([toolA]);
   const runB = await runWithTools([toolB]);
 
-  const firstToolName = runA.calls[0]?.tools?.[0]?.function?.name;
-  const secondToolName = runB.calls[0]?.tools?.[0]?.function?.name;
+  const firstToolName = runA.calls[0]?.tools?.[0]?.name;
+  const secondToolName = runB.calls[0]?.tools?.[0]?.name;
 
   if (firstToolName !== "tool_a") {
     errors.push("Tool swap check failed: first run should use configured tool_a.");

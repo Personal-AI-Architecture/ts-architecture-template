@@ -176,7 +176,7 @@ contract files in the reference repo when applicable.>
 
 ## Drift Considerations
 
-> Drift = the agent introduces patterns that violate component boundaries or contract shapes (e.g., product-specific logic in the Engine, request metadata as runtime config, bypassing Auth, inlining provider logic). For each component this build touches, identify the drift patterns most likely to apply and how the build plan defends against them.
+> Drift = the agent introduces patterns that violate component boundaries or contract shapes (e.g., product-specific logic in the Agent Loop, request metadata as runtime config, bypassing Auth, inlining provider logic). For each component this build touches, identify the drift patterns most likely to apply and how the build plan defends against them.
 
 > Source: `docs/blueprints/drift/<Component>-drift-guard.md` in the reference repo. Read the relevant drift-guards before filling this in.
 

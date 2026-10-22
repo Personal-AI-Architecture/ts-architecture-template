@@ -6,7 +6,7 @@ Thank you for contributing to this contract-first TypeScript architecture templa
 
 This repository is implementation-first and focuses on a reusable scaffold for:
 
-- Gateway, engine, memory, and auth component boundaries
+- Gateway, Agent Loop (legacy `engine` path), memory, and auth component boundaries
 - OpenAPI/JSON Schema contract alignment
 - Conformance and lock-in guardrails
 - Local onboarding and acceptance flows
@@ -25,6 +25,7 @@ Run these before opening a PR:
 
 ```bash
 npm ci
+npm run check:paa
 npm run check
 npm run check:conformance
 npm run acceptance:check

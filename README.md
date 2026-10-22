@@ -7,11 +7,11 @@ A contract-first scaffold for building a personal AI system on the [Personal AI 
 Four components:
 
 - `memory`
-- `engine` (agent loop)
+- `agent loop` (`src/engine`, legacy path)
 - `gateway`
 - `auth`
 
-This template enforces API contracts, import boundaries, and lock-in checks so provider/tool changes stay config-driven. To understand the architecture itself — components, contracts, principles, and the lock-in guarantees — see the [foundation spec](https://github.com/Personal-AI-Architecture/the-architecture/blob/main/docs/foundation-spec.md).
+This template enforces the pinned PAA contracts, import boundaries, and lock-in checks so provider/tool changes stay config-driven. See [docs/paa-compatibility.md](docs/paa-compatibility.md) for the pin and compatibility policy. To understand the architecture itself, see the [PAA architecture overview](https://github.com/Personal-AI-Architecture/the-architecture/blob/main/architecture/overview.md).
 
 For AI agents: start with [AGENT.md](AGENT.md) — component boundaries, contracts to preserve, and validation commands.
 
@@ -45,10 +45,12 @@ After creating your new repository from this template:
 
 1. Rename package metadata in `package.json` (`name`, `description`, `version`).
 2. Pin runtime locally: `nvm use` (uses `.nvmrc`, Node 20).
-3. Install and validate: `npm ci && npm run check:conformance && npm run acceptance:check`.
+3. Install and validate: `npm ci && npm run check:paa && npm run check:conformance && npm run acceptance:check`.
 4. Configure required secrets/variables for your target provider (if using non-mock adapters).
 5. Enable branch protection and required status checks on `main`.
 6. Replace architecture examples/branding text in `README.md` with your project specifics.
+
+The executable checks cover this starter's text-message journey and declared component boundaries. Pinning the full PAA contract set does not by itself certify unimplemented product-specific paths such as production authentication, approval policy, or multimodal provider handling.
 
 ## 5-Minute Developer Onboarding
 
@@ -89,7 +91,7 @@ Canonical client request shape used above:
 
 ```json
 {
-  "content": "Summarize this architecture template.",
+  "content": [{"type": "text", "text": "Summarize this architecture template."}],
   "metadata": {
     "channel": "readme-demo",
     "correlation_id": "corr-readme-demo-001"
@@ -101,7 +103,7 @@ What to look for:
 
 - stream response includes `Content-Type: text/event-stream`
 - stream emits `text-delta` then `done`
-- `done` payload contains `conversation_id` and `message_id`
+- `done` payload contains `finish_reason` and `message_id`
 - `X-Conversation-ID` header is returned
 - `GET /conversations/:id` returns persisted user + assistant history
 
@@ -112,7 +114,17 @@ npm run check:conformance
 npm run acceptance:check
 ```
 
-These commands cover contracts, boundary imports, lock-in gates, conformance tests, and acceptance checks.
+These commands cover the pinned PAA contract mirror, boundary imports, lock-in gates, conformance tests, and acceptance checks. The canonical create route is `POST /conversations/messages`; the legacy `POST /chat` alias is documented as `EXT-001`.
+
+From the parent workspace, the shared language-neutral validator runs the same
+target plus a direct comparison with the pinned PAA source checkout:
+
+```bash
+cd ../paa-templates/paa-conformance-validator
+node bin/paa-validate.js \
+  --target ../../ts-architecture-template/paa.target.json \
+  --source-checkout ../../personal-ai-architecture
+```
 
 ### 5) Perform one config-only provider swap
 
@@ -133,11 +145,11 @@ Expected output:
 
 ```text
 Client
-  -> Gateway API (`/chat`, `/conversations`, `/conversations/{id}`, `/conversations/{id}/messages`)
+  -> Gateway API (`/conversations/messages`, `/conversations`, `/conversations/{id}`, `/conversations/{id}/messages`)
      -> Gateway component (`src/gateway/*`)
-        -> Internal contract: POST /engine/chat
-           -> Engine component (`src/engine/*`)
-              -> Adapters (`src/adapters/*`) -> Model API (`/chat/completions` style)
+        -> Internal contract: POST /agent-loop/chat
+           -> Agent Loop component (`src/engine/*`)
+              -> Adapters (`src/adapters/*`) -> Model API (`/completions`)
               -> Tools (validated by source + permissions)
                  -> Memory component (`src/memory/*`)
 
@@ -147,8 +159,8 @@ Shared contracts/types live in `src/types/*`.
 
 ## Anti-Drift: What Not To Change
 
-- Do not change public Gateway request shape from `{ content, metadata }` to `{ messages, metadata }`.
-- Do not remove `conversation_id` + `message_id` from `done` payloads.
+- Do not change public Gateway request shape from `{ content, metadata? }` to `{ messages, metadata }`.
+- Do not remove `finish_reason` or `message_id` from `done` payloads.
 - Do not remove `X-Conversation-ID` from streaming responses.
 - Do not add runtime provider/model/tool override keys to engine request metadata.
 - Do not move provider-specific tokens (for example `/chat/completions`, `api_key`) outside `src/adapters/`.
@@ -161,26 +173,27 @@ If any example in docs, tests, or code appears inconsistent, contracts and confo
 
 Use artifacts in this order when implementing or reviewing changes:
 
-1. `plan.md`
-2. `specs/openapi/gateway-api.yaml`
-3. `specs/openapi/gateway-engine.yaml`
-4. `specs/openapi/model-api.yaml`
-5. `specs/schemas/message.json`
-6. `scripts/check-contracts.ts`
-7. `scripts/check-imports.ts`
-8. `scripts/check-lockin.ts`
-9. `test/conformance/*`
+1. `paa.lock.json` and `vendor/paa-contracts/`
+2. `contracts/openapi/gateway-api.yaml`
+3. `contracts/openapi/gateway-engine.yaml`
+4. `contracts/openapi/model-api.yaml`
+5. `contracts/schemas/message.json`
+6. `scripts/check-paa-pin.ts`
+7. `scripts/check-contracts.ts`
+8. `scripts/check-imports.ts`
+9. `scripts/check-lockin.ts`
+10. `test/conformance/*`
 
 Rule: when examples diverge from contracts/checks, contracts and conformance checks are authoritative.
 
 ## Quick Troubleshooting (Contract Failures)
 
-- `Contract check failed: Gateway API must define /chat endpoint.`
-  - Restore endpoint definitions in `specs/openapi/gateway-api.yaml`.
-- `PublicGatewayMessageRequest must not include messages array.`
-  - Ensure request schema only has `content` and `metadata`.
-- `CompletionPayload property drift...`
-  - Ensure completion payload is exactly `conversation_id` and `message_id`.
+- `PAA pin check failed...`
+  - Review the pinned commit, vendored hashes, and local contract mirror.
+- `Gateway API path ... has drifted.`
+  - Restore the canonical PAA route in `contracts/openapi/gateway-api.yaml` and update the runtime/test together.
+- `Model API must not promote provider-native /chat/completions...`
+  - Keep provider-native transport details inside `src/adapters/`; the PAA contract is `/completions`.
 - `Forbidden component coupling...`
   - Fix imports to stay within the owning component or `src/types`.
 - `Provider-specific token ... must stay within src/adapters/`

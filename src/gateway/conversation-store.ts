@@ -7,6 +7,7 @@ const crypto = require("crypto") as {
 
 import {
   type CanonicalMessage,
+  type ContentPart,
   type GatewayConversationDetail,
   type GatewayConversationMessage,
   type GatewayConversationSummary,
@@ -33,7 +34,8 @@ interface PersistedConversationValue {
 interface PersistedConversationMessage {
   message_id: string;
   role: MessageRole;
-  content: string;
+  content: string | ContentPart[];
+  created_at?: string;
 }
 
 export interface GatewayMemoryContract {
@@ -69,7 +71,7 @@ export interface GatewayConversationStore {
   appendMessage(
     conversationId: string,
     role: "user" | "assistant",
-    content: string
+    content: string | ContentPart[]
   ): Promise<AppendConversationMessageResult>;
   listConversations(): Promise<GatewayConversationSummary[]>;
   getConversationDetail(conversationId: string): Promise<GatewayConversationDetail | null>;
@@ -103,7 +105,7 @@ function isCanonicalMessage(value: unknown): value is CanonicalMessage {
   if (!isObjectLike(value)) {
     return false;
   }
-  return isValidRole(value.role) && typeof value.content === "string";
+  return isValidRole(value.role) && (typeof value.content === "string" || Array.isArray(value.content));
 }
 
 function normalizeCanonicalMessages(value: unknown): CanonicalMessage[] {
@@ -127,14 +129,15 @@ function readMessageIndex(metadata: Record<string, unknown>): PersistedConversat
     if (
       typeof candidate.message_id !== "string" ||
       !isValidRole(candidate.role) ||
-      typeof candidate.content !== "string"
+      (typeof candidate.content !== "string" && !Array.isArray(candidate.content))
     ) {
       continue;
     }
     parsed.push({
       message_id: candidate.message_id,
       role: candidate.role,
-      content: candidate.content
+      content: candidate.content,
+      ...(typeof candidate.created_at === "string" ? { created_at: candidate.created_at } : {})
     });
   }
 
@@ -173,9 +176,10 @@ function toConversationSummary(
   record: MemoryRecord<PersistedConversationValue>
 ): GatewayConversationSummary {
   return {
-    conversation_id: record.value.conversation_id,
+    id: record.value.conversation_id,
     created_at: record.created_at,
-    updated_at: record.updated_at
+    updated_at: record.updated_at,
+    message_count: record.value.messages.length
   };
 }
 
@@ -183,22 +187,24 @@ function toConversationMessage(
   conversationId: string,
   message: CanonicalMessage,
   index: number,
-  persistedIndex: PersistedConversationMessage[]
+  persistedIndex: PersistedConversationMessage[],
+  fallbackCreatedAt: string
 ): GatewayConversationMessage {
   const persisted = persistedIndex[index];
   const fallbackId = `${conversationId}-msg-${index + 1}`;
 
   return {
-    message_id: persisted?.message_id ?? fallbackId,
-    role: message.role,
-    content: message.content
+    id: persisted?.message_id ?? fallbackId,
+    role: message.role === "assistant" ? "assistant" : "user",
+    content: typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content,
+    created_at: persisted?.created_at ?? fallbackCreatedAt
   };
 }
 
-function createUserOrAssistantMessage(role: "user" | "assistant", content: string): CanonicalMessage {
+function createUserOrAssistantMessage(role: "user" | "assistant", content: string | ContentPart[]): CanonicalMessage {
   return {
     role,
-    content
+    content: typeof content === "string" ? [{ type: "text", text: content }] : content
   };
 }
 
@@ -274,7 +280,7 @@ export function createGatewayConversationStore(config: ConversationStoreConfig):
     async appendMessage(
       conversationId: string,
       role: "user" | "assistant",
-      content: string
+      content: string | ContentPart[]
     ): Promise<AppendConversationMessageResult> {
       const existing = await readConversation(conversationId);
       if (!existing) {
@@ -292,7 +298,8 @@ export function createGatewayConversationStore(config: ConversationStoreConfig):
         {
           message_id: messageId,
           role: nextMessage.role,
-          content: nextMessage.content
+          content: nextMessage.content,
+          created_at: new Date().toISOString()
         }
       ];
       metadata[MESSAGE_INDEX_KEY] = messageIndex;
@@ -325,12 +332,14 @@ export function createGatewayConversationStore(config: ConversationStoreConfig):
 
       const messageIndex = readMessageIndex(record.value.metadata);
       const messages = record.value.messages.map((message, index) =>
-        toConversationMessage(conversationId, message, index, messageIndex)
+        toConversationMessage(conversationId, message, index, messageIndex, record.created_at)
       );
 
       return {
-        conversation_id: conversationId,
-        messages
+        id: conversationId,
+        messages,
+        created_at: record.created_at,
+        updated_at: record.updated_at
       };
     }
   };

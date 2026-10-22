@@ -2,7 +2,8 @@ import {
   type CanonicalMessage,
   type ModelAdapter,
   type ModelChatRequest,
-  type ModelStreamChunk
+  type ModelStreamChunk,
+  normalizeToolDefinition
 } from "../types/contracts";
 
 export interface MockAdapterConfig {
@@ -105,8 +106,7 @@ export function createMockAdapter(config: MockAdapterConfig = {}): ModelAdapter 
           type: "tool-call",
           delta: {
             id: "mock-tool-call-1",
-            type: "function",
-            name: selectedTool.function.name,
+            name: normalizeToolDefinition(selectedTool)?.name ?? "",
             arguments: JSON.stringify({ input: "mock" })
           }
         };
@@ -114,7 +114,7 @@ export function createMockAdapter(config: MockAdapterConfig = {}): ModelAdapter 
         yield {
           type: "text-delta",
           delta: {
-            text: `Calling tool ${selectedTool.function.name}`
+            text: `Calling tool ${normalizeToolDefinition(selectedTool)?.name ?? "tool"}`
           }
         };
 

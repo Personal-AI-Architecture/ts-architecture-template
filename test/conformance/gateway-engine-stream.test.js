@@ -30,13 +30,10 @@ const { createEngineChatHandler } = require("../../src/engine/index.ts");
 const allowedEvents = new Set(["text-delta", "tool-call", "tool-result", "done", "error"]);
 
 const readTool = {
-  type: "function",
+  name: "memory_read",
+  description: "read memory",
+  parameters: { type: "object", properties: {} },
   source: "memory",
-  function: {
-    name: "memory_read",
-    description: "read memory",
-    parameters: { type: "object", properties: {} }
-  }
 };
 
 async function collectEvents(stream) {
@@ -94,13 +91,15 @@ test("gateway engine handler emits canonical stream events for tool + done flow"
   const events = await collectEvents(
     handler.handle({
       method: "POST",
-      path: "/engine/chat",
+      path: "/agent-loop/chat",
       headers: {
         "X-Actor-ID": "actor-conformance",
         "X-Actor-Permissions": "memory:read"
       },
       body: {
         messages: [{ role: "user", content: "read memory" }],
+        model: "mock",
+        auth_context: { actor: { id: "actor-conformance" }, correlation_id: "corr-conformance" },
         metadata: {
           correlation_id: "corr-conformance"
         }
@@ -114,9 +113,12 @@ test("gateway engine handler emits canonical stream events for tool + done flow"
   }
 
   assert.equal(events[0].event, "tool-call");
+  assert.deepEqual(events[0].data.arguments, {});
   assert.equal(events[1].event, "tool-result");
   assert.equal(events[events.length - 2].event, "text-delta");
+  assert.equal(events[events.length - 2].data.content, "tool-finished");
   assert.equal(events[events.length - 1].event, "done");
+  assert.equal(events[events.length - 1].data.finish_reason, "stop");
 });
 
 test("gateway engine handler enforces endpoint and actor headers", async () => {
@@ -153,7 +155,7 @@ test("gateway engine handler enforces endpoint and actor headers", async () => {
   const missingHeaderEvents = await collectEvents(
     handler.handle({
       method: "POST",
-      path: "/engine/chat",
+      path: "/agent-loop/chat",
       headers: {
         "X-Actor-ID": "actor-conformance"
       },

@@ -46,6 +46,9 @@ test("stream mapper emits only internal engine event names", () => {
     assert.equal(isAllowedEngineEventName(event.event), true);
   }
 
+  assert.equal(toStreamEventFromModelChunk(chunks[0]).data.content, "x");
+  assert.equal(toStreamEventFromModelChunk(chunks[3]).data.finish_reason, "stop");
+
   assert.equal(isAllowedEngineEventName("approval-request"), false);
   assert.equal(toStreamEventFromModelChunk({ type: "unknown" }), null);
 });

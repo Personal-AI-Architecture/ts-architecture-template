@@ -21,7 +21,7 @@ Run the loop when verification (step 5) reveals one of:
 - **A wrong assumption.** *"The spec said tool calls would be synchronous; the test showed we need async."*
 - **A new invariant.** *"While building Phase 2 we discovered a property that must always hold but wasn't in the spec."*
 - **A phase that's wrong-shaped.** *"Phase 3 turned out to be two phases. The build plan needs to split."*
-- **A drift-guard check failed.** *"The build introduced a pattern the drift-guard prohibits — Engine accumulated product-specific logic, request metadata became a hidden config channel, etc. The build plan's Drift Considerations missed this; we need to add a defense."*
+- **A drift-guard check failed.** *"The build introduced a pattern the drift-guard prohibits — the Agent Loop accumulated product-specific logic, request metadata became a hidden config channel, etc. The build plan's Drift Considerations missed this; we need to add a defense."*
 - **A "this works but it feels wrong" moment.** *"Acceptance criteria pass but the result is not what we wanted."*
 
 **Don't run the loop for routine bug fixes** — those go in step 4. The loop is for things that change the *plan*, not just the *implementation*.
