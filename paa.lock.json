@@ -1,7 +1,7 @@
 {
   "repository": "https://github.com/Personal-AI-Architecture/the-architecture.git",
   "ref": "main",
-  "commit": "55707c2627e308eb3458e67db2644c458f95b236",
+  "commit": "28e9a275a0f5e062aa4452892e9ec70644f88c69",
   "source_root": "vendor/paa-contracts",
   "contract_files": [
     "contracts/openapi/gateway-api.yaml",
@@ -21,9 +21,9 @@
     "contracts/schemas/tool-definition.json"
   ],
   "sha256": {
-    "contracts/openapi/gateway-api.yaml": "9e36466b50d0ef0622fef0f4872cc36cd7281785110a347c409b49777dd49ce6",
-    "contracts/openapi/gateway-engine.yaml": "b35310b0da6c9e13a477cdc5750870b92a004afd3a730f4fdb7fd1425aadb2cd",
-    "contracts/openapi/model-api.yaml": "d70d9f5e1f1ea88bce65c8e9e38e4094d266d34d5307a6e4eb365362d7efd5c7",
+    "contracts/openapi/gateway-api.yaml": "24537f3e20d86d0bfb0977e235196b261b11064c878dc947e829b864a9c74616",
+    "contracts/openapi/gateway-engine.yaml": "6b34d7666eceac85cb7647cd12bcbb5140bbc9e13b0585aef50a135685bc796a",
+    "contracts/openapi/model-api.yaml": "2661ada1ef8ee68b76237ff1f0953d79cf1bbeed9bb9d58cac92c51453b2a7a8",
     "contracts/schemas/approval-decision.json": "5afebf7c8e11f46b230b9f46af443659160114fd759c53054a0df96e3f106f3d",
     "contracts/schemas/approval-request.json": "89a6ea7c3a0000b5b403bccc92e5a324e8e1125c5afd9c5d361f07e6ed9f088c",
     "contracts/schemas/audit-record.json": "fa52869df14512aba52ae780dc0e5dc942e89b5cee3dc09a6a7ac270dd49ce26",
@@ -31,7 +31,7 @@
     "contracts/schemas/authentication-result.json": "31e49bc02b9f8d6052b877afed09aa2510ecc181f8028e0834cd9a64e16c1334",
     "contracts/schemas/authorization-request.json": "6b4b80d48aa8cc2bdb0ff43026b4734a5560e034bda516677689090b069673f2",
     "contracts/schemas/authorization-result.json": "f11497aeff116f19728626b4129c802f3ee8646aa7ac464c19fccfd89337cfb2",
-    "contracts/schemas/configuration.json": "8ebfdf8ceb428ee4c9f75dd9f77434dc5eaf90da2ec5ab01e3968c456a5d4f14",
+    "contracts/schemas/configuration.json": "c54717d362a506d806f6a98f8e65f505ed3815dabae3c4c6311a2df882538403",
     "contracts/schemas/identity.json": "a20c851314f326ada5117fca533b99a402d0cb26b6c312455055c30a88dce2ad",
     "contracts/schemas/message.json": "24b53e1593ceb99f814b14cfd6c2510466a5fba2dd9de8c0a81868179cc108ce",
     "contracts/schemas/policy.json": "5afc7dd598e2afa1f9db8d35f4197bb3434e69369eda0b21d3d3031a484d36b9",

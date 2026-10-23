@@ -99,6 +99,7 @@ test("gateway engine handler emits canonical stream events for tool + done flow"
       body: {
         messages: [{ role: "user", content: "read memory" }],
         model: "mock",
+        provider: "local",
         auth_context: { actor: { id: "actor-conformance" }, correlation_id: "corr-conformance" },
         metadata: {
           correlation_id: "corr-conformance"

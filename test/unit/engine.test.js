@@ -71,6 +71,7 @@ test("agent loop uses configured tools, not runtime metadata overrides", async (
   });
 
   const request = {
+    model: "mock", provider: "local",
     messages: [{ role: "user", content: "Hi" }],
     metadata: {
       correlation_id: "corr-1",
@@ -135,6 +136,7 @@ test("agent loop preserves text emitted in the same turn as tool calls", async (
 
   const events = await collectEvents(
     loop.run({
+      model: "mock", provider: "local",
       messages: [{ role: "user", content: "Use a tool" }],
       metadata: { correlation_id: "corr-2" }
     })
@@ -231,6 +233,7 @@ test("agent loop executes multiple tool calls in parallel within one turn", asyn
 
   const events = await collectEvents(
     loop.run({
+      model: "mock", provider: "local",
       messages: [{ role: "user", content: "call tools" }],
       metadata: { correlation_id: "corr-3" }
     })
@@ -257,6 +260,7 @@ test("agent loop emits provider_error when adapter throws", async () => {
 
   const events = await collectEvents(
     loop.run({
+      model: "mock", provider: "local",
       messages: [{ role: "user", content: "Hello" }],
       metadata: { correlation_id: "corr-4" }
     })
@@ -281,6 +285,7 @@ test("agent loop emits context_overflow for context limit failures", async () =>
 
   const events = await collectEvents(
     loop.run({
+      model: "mock", provider: "local",
       messages: [{ role: "user", content: "Hello" }],
       metadata: { correlation_id: "corr-5" }
     })
@@ -329,6 +334,7 @@ test("agent loop emits approval semantics before tool_error on denied write tool
 
   const events = await collectEvents(
     loop.run({
+      model: "mock", provider: "local",
       messages: [{ role: "user", content: "write memory" }],
       metadata: { correlation_id: "corr-approval-engine" }
     })
@@ -375,7 +381,7 @@ test("engine chat handler enforces internal POST /agent-loop/chat semantics", as
       body: {
         messages: [{ role: "user", content: "hi" }],
         metadata: { correlation_id: "corr-7" },
-        model: "mock",
+        model: "mock", provider: "local",
         auth_context: { actor: { id: "actor-1" }, correlation_id: "corr-7" }
       }
     })

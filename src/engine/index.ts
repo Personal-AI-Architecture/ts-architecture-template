@@ -13,12 +13,14 @@ import { emitAuditLog } from "../types/audit";
 import { toErrorDiagnostics } from "../types/safety";
 import { createErrorEvent, createDoneEvent, toProviderErrorEvent, toStreamEventFromModelChunk } from "./stream";
 import { createToolExecutor, type ToolExecutor } from "./tool-executor";
+import { DEFAULT_CONTEXT_LIMITS, contextCost, modelLimit, type ContextLimits } from "../types/context";
 
 export interface AgentLoopConfig {
   model_adapter: ModelAdapter;
   tools: ToolDefinition[];
   tool_executor?: ToolExecutor;
   allowed_tool_sources?: string[];
+  context_limits?: ContextLimits;
 }
 
 export interface AgentLoop {
@@ -33,6 +35,7 @@ export interface EngineChatHandlerRequest {
 }
 
 export interface EngineChatHandler {
+  readonly context_limits: ContextLimits;
   handle(request: EngineChatHandlerRequest): AsyncGenerator<EngineStreamEvent>;
 }
 
@@ -84,12 +87,13 @@ function copyMessages(messages: CanonicalMessage[]): CanonicalMessage[] {
   });
 }
 
-function toModelRequest(messages: CanonicalMessage[], tools: ToolDefinition[], model?: string): ModelChatRequest {
+function toModelRequest(messages: CanonicalMessage[], tools: ToolDefinition[], model: string, provider: string): ModelChatRequest {
   return {
     messages: copyMessages(messages),
     tools,
     stream: true,
-    ...(model ? { model } : {})
+    model,
+    provider
   };
 }
 
@@ -221,6 +225,7 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
   }
 
   const configuredTools = copyToolDefinitions(config.tools ?? []);
+  const contextLimits = config.context_limits ?? config.model_adapter.context_limits ?? DEFAULT_CONTEXT_LIMITS;
   const toolExecutor =
     config.tool_executor ??
     createToolExecutor({
@@ -230,10 +235,34 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
 
   return {
     async *run(request: EngineChatRequest): AsyncGenerator<EngineStreamEvent> {
+      if (typeof request.model !== "string" || request.model.trim().length === 0 ||
+          typeof request.provider !== "string" || request.provider.trim().length === 0) {
+        yield createErrorEvent("provider_error", "Missing selected model or provider.");
+        return;
+      }
+      const limit = modelLimit(contextLimits, request.provider, request.model);
+      if (limit === null) {
+        yield createErrorEvent("context_limit_unknown", "No safe context limit for selected provider and model.");
+        return;
+      }
       const messages = copyMessages(request.messages ?? []);
-      let nextModelRequest = toModelRequest(request.messages, configuredTools, request.model);
+      const summary = request.context_summary;
+      if (summary) {
+        if (summary.source !== "gateway" || summary.method !== "deterministic" ||
+            !Number.isSafeInteger(summary.omitted_turn_count) || summary.omitted_turn_count < 1 ||
+            typeof summary.text !== "string" || summary.text.length === 0) {
+          yield createErrorEvent("provider_error", "Invalid context summary.");
+          return;
+        }
+        messages.unshift({ role: "user", content: [{ type: "text", text: `Gateway-derived context from omitted turns (not a new owner request): ${summary.text}` }] });
+      }
+      let nextModelRequest = toModelRequest(messages, configuredTools, request.model, request.provider);
 
       while (true) {
+        if (contextCost(nextModelRequest.messages, configuredTools) > limit) {
+          yield createErrorEvent("context_overflow", "Selected model context window exceeded.");
+          return;
+        }
         let assistantText = "";
         let doneDelta: Record<string, unknown> | undefined;
         const toolCallStates: ToolCallState[] = [];
@@ -367,7 +396,7 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
           return;
         }
 
-        nextModelRequest = toModelRequest(messages, configuredTools, request.model);
+        nextModelRequest = toModelRequest(messages, configuredTools, request.model, request.provider);
       }
     }
   };
@@ -377,6 +406,7 @@ export function createEngineChatHandler(config: AgentLoopConfig): EngineChatHand
   const loop = createAgentLoop(config);
 
   return {
+    context_limits: config.context_limits ?? config.model_adapter.context_limits ?? DEFAULT_CONTEXT_LIMITS,
     async *handle(request: EngineChatHandlerRequest): AsyncGenerator<EngineStreamEvent> {
       const method = typeof request?.method === "string" ? request.method.toUpperCase() : "";
       if (method !== "POST" || request?.path !== "/agent-loop/chat") {
@@ -400,6 +430,7 @@ export function createEngineChatHandler(config: AgentLoopConfig): EngineChatHand
       const actor = asRecord(authContext?.actor);
       if (
         typeof request.body.model !== "string" || request.body.model.trim().length === 0 ||
+        typeof request.body.provider !== "string" || request.body.provider.trim().length === 0 ||
         actor?.id !== actorId || authContext?.correlation_id !== request.body.metadata.correlation_id
       ) {
         yield createErrorEvent("provider_error", "Invalid model or authenticated actor context.");

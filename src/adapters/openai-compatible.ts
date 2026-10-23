@@ -64,9 +64,9 @@ export type OpenAICompatibleFetcher = (
 ) => Promise<OpenAICompatibleResponse>;
 
 export interface OpenAICompatibleAdapterConfig {
-  api_base_url: string;
-  model: string;
+  api_base_url?: string;
   api_key?: string;
+  provider_profiles?: Record<string, { base_url: string; api_key_env?: string; model_context_limits: Record<string, number> }>;
   default_headers?: Record<string, string>;
   fetcher?: OpenAICompatibleFetcher;
 }
@@ -196,11 +196,13 @@ async function* parseSseChunks(body: AsyncIterable<Uint8Array>): AsyncGenerator<
 }
 
 export function mapModelRequestToOpenAIPayload(
-  request: ModelChatRequest,
-  model: string
+  request: ModelChatRequest
 ): OpenAICompatiblePayload {
+  if (!request.model?.trim() || !request.provider?.trim()) {
+    throw new Error("Model API request requires model and provider.");
+  }
   return {
-    model: request.model || model,
+    model: request.model,
     messages: request.messages.map((message) => mapMessage(message)),
     tools: request.tools.map((tool) => mapTool(tool)),
     stream: true
@@ -322,28 +324,42 @@ function normalizeBaseUrl(baseUrl: string): string {
 }
 
 export function createOpenAICompatibleAdapter(config: OpenAICompatibleAdapterConfig): ModelAdapter {
-  if (!config.api_base_url || config.api_base_url.trim().length === 0) {
+  if (!config.provider_profiles && (!config.api_base_url || config.api_base_url.trim().length === 0)) {
     throw new Error("OpenAI-compatible adapter requires api_base_url.");
-  }
-  if (!config.model || config.model.trim().length === 0) {
-    throw new Error("OpenAI-compatible adapter requires model.");
   }
 
   const fetcher = config.fetcher ?? defaultFetcher;
-  const endpoint = `${normalizeBaseUrl(config.api_base_url)}/chat/completions`;
   installOutboundNetworkGuard();
 
   return {
     name: "openai-compatible",
+    context_limits: Object.fromEntries(Object.entries(config.provider_profiles ?? {}).map(([name, profile]) => [name, profile.model_context_limits])),
     async *stream(request: ModelChatRequest): AsyncGenerator<ModelStreamChunk> {
-      const payload = mapModelRequestToOpenAIPayload(request, config.model);
+      const profile = config.provider_profiles?.[request.provider ?? ""];
+      if (config.provider_profiles && !profile) {
+        throw new Error("Unknown selected provider profile.");
+      }
+      if (!config.provider_profiles && request.provider !== "local") {
+        throw new Error("Unknown selected provider profile.");
+      }
+      const baseUrl = profile?.base_url ?? config.api_base_url;
+      if (!baseUrl?.trim()) {
+        throw new Error("Selected provider profile has no base URL.");
+      }
+      const endpoint = `${normalizeBaseUrl(baseUrl)}/chat/completions`;
+      const payload = mapModelRequestToOpenAIPayload(request);
       const headers: Record<string, string> = {
         "content-type": "application/json",
         ...config.default_headers
       };
 
-      if (config.api_key && config.api_key.trim().length > 0) {
-        headers.authorization = `Bearer ${config.api_key}`;
+      const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+      const apiKey = profile?.api_key_env ? env[profile.api_key_env] : profile ? undefined : config.api_key;
+      if (profile?.api_key_env && !apiKey) {
+        throw new Error("Selected provider profile secret is unavailable.");
+      }
+      if (apiKey && apiKey.trim().length > 0) {
+        headers.authorization = `Bearer ${apiKey}`;
       }
 
       let response: OpenAICompatibleResponse;

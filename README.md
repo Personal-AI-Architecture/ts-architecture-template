@@ -11,7 +11,9 @@ Four components:
 - `gateway`
 - `auth`
 
-This template enforces the pinned PAA contracts, import boundaries, and lock-in checks so provider/tool changes stay config-driven. See [docs/paa-compatibility.md](docs/paa-compatibility.md) for the pin and compatibility policy. To understand the architecture itself, see the [PAA architecture overview](https://github.com/Personal-AI-Architecture/the-architecture/blob/main/architecture/overview.md).
+This template enforces the pinned PAA contracts, import boundaries, and lock-in checks. Adapter format and tools are configured at startup; the selected model and provider profile are supplied on every request. See [docs/paa-compatibility.md](docs/paa-compatibility.md) for the pin and compatibility policy. To understand the architecture itself, see the [PAA architecture overview](https://github.com/Personal-AI-Architecture/the-architecture/blob/main/architecture/overview.md).
+
+The current contract checks cover per-request model and provider selection, provider-profile routing, saved reply provenance, context limits and notices, and overflow before a live tool-result continuation. The template is a starting point for an implementation, not a claim that every product-specific PAA conformance case is complete.
 
 For AI agents: start with [AGENT.md](AGENT.md) — component boundaries, contracts to preserve, and validation commands.
 
