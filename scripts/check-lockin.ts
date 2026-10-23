@@ -112,7 +112,7 @@ function checkEngineUsesConfiguredTools(engineSource, errors) {
     errors.push("Agent loop must derive tool list from configured tools.");
   }
 
-  if (!/toModelRequest\(request\.messages,\s*configuredTools,\s*request\.model\)/.test(engineSource)) {
+  if (!/toModelRequest\(messages,\s*configuredTools,\s*request\.model,\s*request\.provider\)/.test(engineSource)) {
     errors.push("Agent loop must send configured tools to model adapter.");
   }
 
@@ -233,14 +233,11 @@ async function checkProviderSwapBehavior(errors) {
 
 async function checkModelSwapBehavior(errors) {
   const { createOpenAICompatibleAdapter } = require("../src/adapters/openai-compatible.ts");
-
-  async function captureRequestedModel(model) {
-    let captured = null;
-    const adapter = createOpenAICompatibleAdapter({
-      api_base_url: "http://provider.local/v1",
-      model,
-      fetcher: async (_url, init) => {
-        captured = JSON.parse(init.body);
+  const captured = [];
+  const adapter = createOpenAICompatibleAdapter({
+    provider_profiles: { local: { base_url: "http://provider.local/v1", model_context_limits: { "gpt-first": 8192, "gpt-second": 8192 } } },
+    fetcher: async (_url, init) => {
+        captured.push(JSON.parse(init.body));
         return {
           ok: true,
           status: 200,
@@ -254,29 +251,30 @@ async function checkModelSwapBehavior(errors) {
           json: async () => ({})
         };
       }
-    });
-
+  });
+  async function sendModel(model) {
     const request = {
       messages: [{ role: "user", content: "hello" }],
       tools: [],
-      stream: true
+      stream: true,
+      model,
+      provider: "local"
     };
 
     for await (const _chunk of adapter.stream(request)) {
       // consume stream
     }
 
-    return captured;
   }
 
-  const first = await captureRequestedModel("gpt-first");
-  const second = await captureRequestedModel("gpt-second");
+  await sendModel("gpt-first");
+  await sendModel("gpt-second");
 
-  if (first?.model !== "gpt-first") {
-    errors.push("Model swap check failed: adapter payload must use configured model gpt-first.");
+  if (captured[0]?.model !== "gpt-first") {
+    errors.push("Model swap check failed: first request must use gpt-first.");
   }
-  if (second?.model !== "gpt-second") {
-    errors.push("Model swap check failed: adapter payload must use configured model gpt-second.");
+  if (captured[1]?.model !== "gpt-second") {
+    errors.push("Model swap check failed: next request must use gpt-second without restart.");
   }
 }
 
@@ -326,6 +324,8 @@ async function checkToolSwapBehavior(errors) {
     const events = [];
     for await (const event of loop.run({
       messages: [{ role: "user", content: "hello" }],
+      model: "mock",
+      provider: "local",
       metadata: {
         correlation_id: "corr-lockin",
         tools: [runtimeOverrideTool]
@@ -415,7 +415,7 @@ async function runLockinCheck() {
         },
         {
           id: "model-swap",
-          description: "model selection remains adapter config-driven",
+          description: "model selection follows each request without restart",
           run: async () => checkModelSwapBehavior(errors)
         },
         {

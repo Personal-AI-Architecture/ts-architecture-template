@@ -36,6 +36,8 @@ interface PersistedConversationMessage {
   role: MessageRole;
   content: string | ContentPart[];
   created_at?: string;
+  model?: string;
+  provider?: string;
 }
 
 export interface GatewayMemoryContract {
@@ -71,7 +73,8 @@ export interface GatewayConversationStore {
   appendMessage(
     conversationId: string,
     role: "user" | "assistant",
-    content: string | ContentPart[]
+    content: string | ContentPart[],
+    provenance?: { model: string; provider: string }
   ): Promise<AppendConversationMessageResult>;
   listConversations(): Promise<GatewayConversationSummary[]>;
   getConversationDetail(conversationId: string): Promise<GatewayConversationDetail | null>;
@@ -137,7 +140,9 @@ function readMessageIndex(metadata: Record<string, unknown>): PersistedConversat
       message_id: candidate.message_id,
       role: candidate.role,
       content: candidate.content,
-      ...(typeof candidate.created_at === "string" ? { created_at: candidate.created_at } : {})
+      ...(typeof candidate.created_at === "string" ? { created_at: candidate.created_at } : {}),
+      ...(typeof candidate.model === "string" ? { model: candidate.model } : {}),
+      ...(typeof candidate.provider === "string" ? { provider: candidate.provider } : {})
     });
   }
 
@@ -197,7 +202,10 @@ function toConversationMessage(
     id: persisted?.message_id ?? fallbackId,
     role: message.role === "assistant" ? "assistant" : "user",
     content: typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content,
-    created_at: persisted?.created_at ?? fallbackCreatedAt
+    created_at: persisted?.created_at ?? fallbackCreatedAt,
+    ...(message.role === "assistant" && persisted?.model && persisted?.provider
+      ? { model: persisted.model, provider: persisted.provider }
+      : {})
   };
 }
 
@@ -280,8 +288,12 @@ export function createGatewayConversationStore(config: ConversationStoreConfig):
     async appendMessage(
       conversationId: string,
       role: "user" | "assistant",
-      content: string | ContentPart[]
+      content: string | ContentPart[],
+      provenance?: { model: string; provider: string }
     ): Promise<AppendConversationMessageResult> {
+      if (role === "assistant" && (!provenance?.model?.trim() || !provenance?.provider?.trim())) {
+        throw new Error("Assistant replies require model and provider provenance.");
+      }
       const existing = await readConversation(conversationId);
       if (!existing) {
         throw new Error(`Conversation not found: ${conversationId}`);
@@ -299,7 +311,8 @@ export function createGatewayConversationStore(config: ConversationStoreConfig):
           message_id: messageId,
           role: nextMessage.role,
           content: nextMessage.content,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          ...(role === "assistant" ? { model: provenance!.model, provider: provenance!.provider } : {})
         }
       ];
       metadata[MESSAGE_INDEX_KEY] = messageIndex;

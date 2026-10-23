@@ -29,6 +29,9 @@ function toStringValue(value: unknown): string | undefined {
 }
 
 function defaultErrorMessage(code: EngineStreamErrorCode): string {
+  if (code === "context_limit_unknown") {
+    return "No safe context limit is known for the selected provider and model.";
+  }
   if (code === "context_overflow") {
     return "Context window exceeded. Reduce prompt size or start a new conversation.";
   }
@@ -118,6 +121,9 @@ export function toErrorEventFromChunk(chunk: ModelStreamChunk): EngineStreamEven
   }
   if (rawCode === "context_overflow") {
     return createErrorEvent("context_overflow", rawMessage);
+  }
+  if (rawCode === "context_limit_unknown") {
+    return createErrorEvent("context_limit_unknown", rawMessage);
   }
 
   if (rawMessage && CONTEXT_OVERFLOW_PATTERN.test(rawMessage)) {

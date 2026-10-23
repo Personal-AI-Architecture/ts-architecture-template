@@ -10,8 +10,10 @@ import {
   type EngineChatRequest,
   type EngineStreamEvent,
   type GatewayPublicMessageRequest,
-  type GatewayStreamEvent
+  type GatewayStreamEvent,
+  type ToolDefinition
 } from "../types/contracts";
+import { DEFAULT_CONTEXT_LIMITS, modelLimit, selectCompleteTurns, type ContextLimits } from "../types/context";
 import { emitAuditLog } from "../types/audit";
 import { toErrorDiagnostics, toSafeClientMessage } from "../types/safety";
 import { type GatewayConversationStore } from "./conversation-store";
@@ -24,6 +26,7 @@ export interface GatewayEngineHandlerRequest {
 }
 
 export interface GatewayEngineHandler {
+  readonly context_limits?: ContextLimits;
   handle(request: GatewayEngineHandlerRequest): AsyncGenerator<EngineStreamEvent>;
 }
 
@@ -49,6 +52,9 @@ export interface GatewayRoutesConfig {
   conversation_store: GatewayConversationStore;
   engine_handler: GatewayEngineHandler;
   current_model?: () => string;
+  current_provider?: () => string;
+  context_limits?: ContextLimits;
+  context_tools?: ToolDefinition[];
 }
 
 const STREAM_HEADERS: Record<string, string> = {
@@ -323,6 +329,22 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
       parsed.value.content
     );
     const correlationId = toCorrelationId(requestMetadata);
+    const selectedModel = config.current_model?.() ?? "mock";
+    const selectedProvider = config.current_provider?.() ?? "local";
+    const limit = modelLimit(config.context_limits ?? config.engine_handler.context_limits ?? DEFAULT_CONTEXT_LIMITS, selectedProvider, selectedModel);
+    if (limit === null) {
+      return createJsonResponse(503, {
+        code: "context_limit_unknown",
+        message: "No safe context limit for selected provider and model."
+      });
+    }
+    const selection = selectCompleteTurns(userMessage.messages, config.context_tools ?? [], limit);
+    if (!selection) {
+      return createJsonResponse(422, {
+        code: "context_overflow",
+        message: "Current message exceeds the selected model context window."
+      });
+    }
 
     const engineRequest: GatewayEngineHandlerRequest = {
       method: "POST",
@@ -332,8 +354,9 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
         "X-Actor-Permissions": actorHeaders["X-Actor-Permissions"]
       },
       body: {
-        messages: userMessage.messages,
-        model: config.current_model?.() ?? "mock",
+        messages: selection.messages,
+        model: selectedModel,
+        provider: selectedProvider,
         auth_context: {
           actor: { id: actorHeaders["X-Actor-ID"], type: "owner", display_name: actorHeaders["X-Actor-ID"], status: "active", created: new Date().toISOString() },
           authentication_id: createIdentifier("authn"),
@@ -353,6 +376,17 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
       let emittedDone = false;
 
       try {
+        if (selection.omitted_turn_count > 0) {
+          yield {
+            event: "context_notice",
+            data: {
+              _event_type: "context_notice",
+              action: "omitted",
+              omitted_turn_count: selection.omitted_turn_count,
+              message: "Older conversation turns were omitted from this reply's working context."
+            }
+          };
+        }
         for await (const engineEvent of config.engine_handler.handle(engineRequest)) {
           if (engineEvent.event === "text-delta") {
             const data = cloneEventData(engineEvent.data) ?? {};
@@ -404,7 +438,8 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
           const assistantMessage = await config.conversation_store.appendMessage(
             conversationId,
             "assistant",
-            assistantContent
+            assistantContent,
+            { model: selectedModel, provider: selectedProvider }
           );
           const completionData: Record<string, unknown> = {
             finish_reason:
@@ -429,7 +464,8 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
           const assistantMessage = await config.conversation_store.appendMessage(
             conversationId,
             "assistant",
-            assistantContent
+            assistantContent,
+            { model: selectedModel, provider: selectedProvider }
           );
           const completionData: Record<string, unknown> = {
             finish_reason: "stop",

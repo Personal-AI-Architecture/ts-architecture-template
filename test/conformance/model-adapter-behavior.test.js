@@ -77,12 +77,12 @@ test("model adapter loader swaps providers via runtime configuration", () => {
   assert.equal(openaiAdapter.name, "openai-compatible");
 });
 
-test("openai-compatible adapter keeps model selection config-driven", async () => {
+test("openai-compatible adapter uses the model selected for this request", async () => {
   let capturedBody;
 
   const adapter = createOpenAICompatibleAdapter({
     api_base_url: "http://provider.local/v1",
-    model: "gpt-config-selected",
+    model: "fallback",
     fetcher: async (_url, init) => {
       capturedBody = JSON.parse(init.body);
       return {
@@ -103,7 +103,9 @@ test("openai-compatible adapter keeps model selection config-driven", async () =
   for await (const _chunk of adapter.stream({
     messages: [{ role: "user", content: "Hello" }],
     tools: [],
-    stream: true
+    stream: true,
+    model: "gpt-config-selected",
+    provider: "local"
   })) {
     // consume stream
   }
@@ -115,6 +117,8 @@ test("openai-compatible adapter keeps model selection config-driven", async () =
 test("agent loop tolerates adapter swap with canonical stream semantics", async () => {
   const request = {
     messages: [{ role: "user", content: "hello" }],
+    model: "mock",
+    provider: "local",
     metadata: {
       correlation_id: "corr-adapter-swap"
     }

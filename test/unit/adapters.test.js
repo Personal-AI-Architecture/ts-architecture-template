@@ -44,6 +44,7 @@ const runtimeBase = {
 };
 
 const basicRequest = {
+  model: "mock", provider: "local",
   messages: [{ role: "user", content: "hello" }],
   tools: [],
   stream: true
@@ -138,9 +139,10 @@ test("openai-compatible adapter maps model request shape", () => {
         }
       ],
       tools: [sampleTool],
-      stream: true
-    },
-    "gpt-test"
+      stream: true,
+      model: "gpt-test",
+      provider: "local"
+    }
   );
 
   assert.equal(payload.model, "gpt-test");

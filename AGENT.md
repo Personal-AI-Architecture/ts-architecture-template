@@ -54,7 +54,7 @@ If examples diverge from contracts/checks, contracts and conformance checks are 
   and the assistant `message_id` in the `done` payload.
 - Preserve the PAA Agent Loop handoff contract: `POST /agent-loop/chat` with required `metadata.correlation_id`.
 - Do not introduce runtime provider/model/tool overrides in engine request metadata.
-- Keep provider/model swap behavior config-driven (`runtime.provider_adapter`, adapter config), not hardcoded in engine/gateway.
+- Keep adapter-format selection in runtime config. Read the active provider profile and model preference on every message; send both on every model request. Switching a listed profile or model requires no restart.
 - Keep import boundaries intact; no cross-component coupling outside allowed patterns in `scripts/check-imports.ts`.
 - Keep localhost-first boot defaults (`127.0.0.1`) and offline-capable local/mock path.
 - Keep the PAA pin, contract mirror, lock-in, and conformance checks meaningful; do not bypass scripts/tests to force green output.

@@ -214,6 +214,7 @@ test("current PAA request uses content parts, a per-turn model, and authenticate
     const routes = createGatewayRoutes({
       conversation_store: store,
       current_model: () => selectedModel,
+      context_limits: { local: { "model-one": 8192, "model-two": 8192 } },
       engine_handler: {
         async *handle(request) {
           handoffs.push(request);

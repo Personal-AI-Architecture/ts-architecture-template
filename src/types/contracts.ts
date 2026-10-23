@@ -134,6 +134,7 @@ export function normalizeToolCall(value: unknown): ToolCall | undefined {
 }
 
 export type GatewayStreamEventName =
+  | "context_notice"
   | "text-delta"
   | "tool-call"
   | "tool-result"
@@ -161,6 +162,8 @@ export interface GatewayConversationMessage {
   content: ContentPart[];
   created_at: string;
   metadata?: Record<string, unknown>;
+  model?: string;
+  provider?: string;
 }
 
 export interface GatewayConversationDetail {
@@ -196,8 +199,10 @@ export interface EngineRequestMetadata {
 export interface EngineRequest {
   messages: CanonicalMessage[];
   metadata?: EngineRequestMetadata;
-  model?: string;
-  auth_context?: Record<string, unknown>;
+  model: string;
+  provider: string;
+  context_summary?: { source: "gateway"; method: "deterministic"; omitted_turn_count: number; text: string };
+  auth_context: Record<string, unknown>;
 }
 
 export type EngineChatRequest = EngineRequest & {
@@ -219,7 +224,8 @@ export type EngineStreamEventName =
 export type EngineStreamErrorCode =
   | "provider_error"
   | "tool_error"
-  | "context_overflow";
+  | "context_overflow"
+  | "context_limit_unknown";
 
 export interface EngineStreamEvent<TData = Record<string, unknown>> {
   event: EngineStreamEventName;
@@ -230,7 +236,8 @@ export interface CompletionRequest {
   messages: CanonicalMessage[];
   tools?: ToolDefinition[];
   stream?: boolean;
-  model?: string;
+  model: string;
+  provider: string;
   max_tokens?: number;
   temperature?: number;
 }
@@ -247,6 +254,7 @@ export interface ModelStreamChunk {
 
 export interface ModelAdapter {
   readonly name: string;
+  readonly context_limits?: Record<string, Record<string, number>>;
   stream(request: ModelChatRequest): AsyncGenerator<ModelStreamChunk>;
 }
 
