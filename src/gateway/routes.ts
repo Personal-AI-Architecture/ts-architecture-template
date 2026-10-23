@@ -185,6 +185,13 @@ function parsePublicMessageRequest(
   const content = body.content;
   if (!Array.isArray(content) || content.length === 0 || content.some((part) => {
     if (!isObjectLike(part)) return true;
+    if ("extensions" in part && !isObjectLike(part.extensions)) return true;
+    const allowed = part.type === "text"
+      ? new Set(["type", "text", "extensions"])
+      : part.type === "image" || part.type === "file"
+        ? new Set(["type", "url", "name", "mime_type", "extensions"])
+        : null;
+    if (!allowed || Object.keys(part).some((key) => !allowed.has(key))) return true;
     if (part.type === "text") return typeof part.text !== "string";
     if (part.type === "image" || part.type === "file") return typeof part.url !== "string";
     return true;

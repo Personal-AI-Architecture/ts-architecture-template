@@ -1,10 +1,10 @@
 export type MessageRole = "system" | "user" | "assistant" | "tool";
 
 export type ContentPart =
-  | { type: "text"; text: string }
-  | { type: "image" | "file"; url: string; name?: string; mime_type?: string }
-  | { type: "tool_call"; id: string; source_id: string; name: string; arguments: Record<string, unknown> }
-  | { type: "tool_result"; tool_call_id: string; result: unknown; is_error?: boolean };
+  | { type: "text"; text: string; extensions?: Record<string, unknown> }
+  | { type: "image" | "file"; url: string; name?: string; mime_type?: string; extensions?: Record<string, unknown> }
+  | { type: "tool_call"; id: string; source_id: string; name: string; arguments: Record<string, unknown>; extensions?: Record<string, unknown> }
+  | { type: "tool_result"; tool_call_id: string; result: unknown; is_error?: boolean; extensions?: Record<string, unknown> };
 
 export interface ToolCall {
   id: string;
@@ -48,6 +48,7 @@ export interface ToolDefinition {
   description: string;
   parameters: Record<string, unknown>;
   source?: string;
+  source_kind?: string;
   category?: "always-send" | "discoverable";
   mutates_state?: boolean;
   required_permissions?: string[];
@@ -91,6 +92,9 @@ export function normalizeToolDefinition(value: unknown): ToolDefinition | undefi
   const name = typeof source.name === "string" ? source.name.trim() : "";
   const description = typeof source.description === "string" ? source.description : "";
   const parameters = asRecord(source.parameters) ?? {};
+  const canonicalSource = asRecord(record.source);
+  const canonicalSourceId = typeof canonicalSource?.id === "string" ? canonicalSource.id.trim() : "";
+  const canonicalSourceKind = typeof canonicalSource?.kind === "string" ? canonicalSource.kind.trim() : "";
   if (!name) {
     return undefined;
   }
@@ -99,7 +103,10 @@ export function normalizeToolDefinition(value: unknown): ToolDefinition | undefi
     name,
     description,
     parameters,
-    ...(typeof record.source === "string" ? { source: record.source } : {}),
+    ...(canonicalSourceId && canonicalSourceKind
+      ? { source: canonicalSourceId, source_kind: canonicalSourceKind }
+      : typeof record.source === "string" ? { source: record.source } : {}),
+    ...(typeof record.source_kind === "string" && record.source_kind.trim() ? { source_kind: record.source_kind.trim() } : {}),
     ...(record.category === "always-send" || record.category === "discoverable"
       ? { category: record.category }
       : {}),
@@ -223,6 +230,9 @@ export type EngineStreamEventName =
 
 export type EngineStreamErrorCode =
   | "provider_error"
+  | "model_unavailable"
+  | "capability_unsupported"
+  | "auth_error"
   | "tool_error"
   | "context_overflow"
   | "context_limit_unknown";

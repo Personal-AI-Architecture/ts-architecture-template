@@ -38,6 +38,15 @@ function defaultErrorMessage(code: EngineStreamErrorCode): string {
   if (code === "tool_error") {
     return "Tool execution failed.";
   }
+  if (code === "auth_error") {
+    return "Authentication context was rejected.";
+  }
+  if (code === "model_unavailable") {
+    return "The selected model is unavailable through the selected provider.";
+  }
+  if (code === "capability_unsupported") {
+    return "The selected model does not support the requested capability.";
+  }
   return "Model provider failed to complete the stream.";
 }
 
@@ -83,14 +92,16 @@ export function createDoneEvent(data?: Record<string, unknown>): EngineStreamEve
 
 export function createErrorEvent(
   code: EngineStreamErrorCode,
-  overrideMessage?: string
-): EngineStreamEvent<{ code: EngineStreamErrorCode; message: string }> {
+  overrideMessage?: string,
+  capability?: string
+): EngineStreamEvent<{ code: EngineStreamErrorCode; message: string; capability?: string }> {
   const message = toSafeClientMessage(overrideMessage, defaultErrorMessage(code));
   return {
     event: "error",
     data: {
       code,
-      message
+      message,
+      ...(code === "capability_unsupported" && capability ? { capability } : {})
     }
   };
 }
@@ -104,11 +115,19 @@ export function isContextOverflowError(error: unknown): boolean {
 }
 
 export function classifyProviderErrorCode(error: unknown): EngineStreamErrorCode {
+  const structured = asRecord(error);
+  if (structured?.code === "model_unavailable") {
+    return "model_unavailable";
+  }
+  if (structured?.code === "capability_unsupported" && toStringValue(structured.capability)) {
+    return "capability_unsupported";
+  }
   return isContextOverflowError(error) ? "context_overflow" : "provider_error";
 }
 
 export function toProviderErrorEvent(error: unknown): EngineStreamEvent {
-  return createErrorEvent(classifyProviderErrorCode(error));
+  const code = classifyProviderErrorCode(error);
+  return createErrorEvent(code, undefined, code === "capability_unsupported" ? toStringValue(asRecord(error)?.capability) : undefined);
 }
 
 export function toErrorEventFromChunk(chunk: ModelStreamChunk): EngineStreamEvent {
@@ -118,6 +137,13 @@ export function toErrorEventFromChunk(chunk: ModelStreamChunk): EngineStreamEven
 
   if (rawCode === "tool_error") {
     return createErrorEvent("tool_error", rawMessage);
+  }
+  if (rawCode === "model_unavailable") {
+    return createErrorEvent("model_unavailable");
+  }
+  if (rawCode === "capability_unsupported") {
+    const capability = toStringValue(delta?.capability);
+    return capability ? createErrorEvent("capability_unsupported", undefined, capability) : createErrorEvent("provider_error");
   }
   if (rawCode === "context_overflow") {
     return createErrorEvent("context_overflow", rawMessage);
