@@ -1,7 +1,7 @@
 # PAA Compatibility Policy
 
 This template is pinned to the Personal AI Architecture contract source at
-commit `aa0ff01757306b2b3aa1015bb4366a5a578d5102`. The pin is recorded in
+commit `cfeb96df743feee91afc80ac81f0c4fd9a62c123`. The pin is recorded in
 [`paa.lock.json`](../paa.lock.json), and the exact contract files are vendored
 under [`vendor/paa-contracts/`](../vendor/paa-contracts/).
 
