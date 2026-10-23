@@ -388,4 +388,12 @@ test("engine chat handler enforces internal POST /agent-loop/chat semantics", as
   );
 
   assert.equal(ok[ok.length - 1].event, "done");
+
+  const rejected = await collectEvents(handler.handle({
+    method: "POST", path: "/agent-loop/chat",
+    headers: { "X-Actor-ID": "actor-1", "X-Actor-Permissions": "memory:read" },
+    body: { messages: [{ role: "user", content: "hi" }], metadata: { correlation_id: "corr-8" }, model: "mock", provider: "local", auth_context: { actor: { id: "actor-1" }, correlation_id: "corr-8", unexpected: "spoof" } }
+  }));
+  assert.equal(rejected.length, 1);
+  assert.equal(rejected[0].data.code, "auth_error");
 });

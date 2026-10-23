@@ -78,3 +78,15 @@ test("context-limit provider chunk errors map to context_overflow", () => {
   assert.equal(event.event, "error");
   assert.equal(event.data.code, "context_overflow");
 });
+
+test("canonical model errors keep their category and required capability without leaking provider text", () => {
+  const unavailable = toErrorEventFromChunk({ type: "error", delta: { code: "model_unavailable", message: "secret=/tmp/key" } });
+  assert.equal(unavailable.data.code, "model_unavailable");
+  assert.doesNotMatch(unavailable.data.message, /secret|\/tmp/);
+
+  const unsupported = toErrorEventFromChunk({ type: "error", delta: { code: "capability_unsupported", capability: "image_input", message: "secret=/tmp/key" } });
+  assert.equal(unsupported.data.code, "capability_unsupported");
+  assert.equal(unsupported.data.capability, "image_input");
+  assert.doesNotMatch(unsupported.data.message, /secret|\/tmp/);
+  assert.equal(toErrorEventFromChunk({ type: "error", delta: { code: "capability_unsupported" } }).data.code, "provider_error");
+});

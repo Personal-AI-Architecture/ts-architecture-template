@@ -135,6 +135,28 @@ function toStringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+function normalizedProviderFailure(body: string): { code: "model_unavailable" | "capability_unsupported"; capability?: string } | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  const root = asRecord(parsed);
+  const failure = asRecord(root?.error) ?? root;
+  const code = toStringValue(failure?.code) || toStringValue(failure?.type);
+  if (code === "model_unavailable" || code === "model_not_found") {
+    return { code: "model_unavailable" };
+  }
+  if (code === "capability_unsupported" || code === "unsupported_capability") {
+    const capability = toStringValue(failure?.capability) || toStringValue(failure?.param);
+    if (/^[a-z][a-z0-9_.-]{0,63}$/i.test(capability)) {
+      return { code: "capability_unsupported", capability };
+    }
+  }
+  return null;
+}
+
 function asUint8Array(value: unknown): Uint8Array | null {
   if (value instanceof Uint8Array) {
     return value;
@@ -400,7 +422,7 @@ export function createOpenAICompatibleAdapter(config: OpenAICompatibleAdapterCon
 
       if (!response.ok) {
         const details = await response.text();
-        const suffix = details.trim().length > 0 ? `: ${details}` : "";
+        const failure = normalizedProviderFailure(details);
         emitAuditLog({
           category: "network",
           action: "provider_response",
@@ -411,7 +433,10 @@ export function createOpenAICompatibleAdapter(config: OpenAICompatibleAdapterCon
             status_text: response.statusText
           }
         });
-        throw new Error(`Provider request failed (${response.status} ${response.statusText})${suffix}`);
+        if (failure) {
+          throw Object.assign(new Error("Selected model request failed."), failure);
+        }
+        throw new Error(`Provider request failed (${response.status} ${response.statusText})`);
       }
 
       const body = toAsyncIterableBody(response.body);

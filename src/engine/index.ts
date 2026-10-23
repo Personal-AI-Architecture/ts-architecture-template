@@ -235,6 +235,11 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
 
   return {
     async *run(request: EngineChatRequest): AsyncGenerator<EngineStreamEvent> {
+      const authContext = asRecord(request.auth_context);
+      if (authContext && Object.keys(authContext).some((key) => !["actor", "authentication_id", "authenticated_at", "expires_at", "correlation_id"].includes(key))) {
+        yield createErrorEvent("auth_error", "Authentication context was rejected.");
+        return;
+      }
       if (typeof request.model !== "string" || request.model.trim().length === 0 ||
           typeof request.provider !== "string" || request.provider.trim().length === 0) {
         yield createErrorEvent("provider_error", "Missing selected model or provider.");

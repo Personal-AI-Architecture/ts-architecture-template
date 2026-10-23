@@ -36,6 +36,7 @@ const {
   installOutboundNetworkGuard,
   withOutboundNetworkPermit
 } = require("../../src/types/network.ts");
+const { normalizeToolDefinition } = require("../../src/types/contracts.ts");
 
 const runtimeBase = {
   memory_root: "/tmp/memory",
@@ -113,6 +114,18 @@ test("mock adapter supports tool-call scenarios", async () => {
   assert.ok(toolCall);
   assert.equal(toolCall.delta.name, "lookup_weather");
   assert.equal(chunks[chunks.length - 1].type, "done");
+});
+
+test("tool definitions retain source identity with a new protocol label and ignore extensions", () => {
+  const normalized = normalizeToolDefinition({
+    name: "lookup_weather", description: "Weather", parameters: { type: "object" },
+    source: { id: "weather-service", kind: "future-protocol" }, visibility: "always-send",
+    extensions: { future_key: "ignored" }
+  });
+  assert.equal(normalized.source, "weather-service");
+  assert.equal(normalized.source_kind, "future-protocol");
+  assert.equal(normalized.name, "lookup_weather");
+  assert.equal(normalized.extensions, undefined);
 });
 
 test("openai-compatible adapter maps model request shape", () => {
@@ -217,6 +230,32 @@ test("openai-compatible adapter streams parsed SSE provider events", async () =>
 
   assert.ok(chunks.some((chunk) => chunk.type === "text-delta"));
   assert.equal(chunks[chunks.length - 1].type, "done");
+});
+
+test("openai-compatible adapter recognizes explicit model failures without exposing provider text", async () => {
+  for (const [providerCode, capability, expected] of [
+    ["model_not_found", undefined, "model_unavailable"],
+    ["unsupported_capability", "image_input", "capability_unsupported"]
+  ]) {
+    const adapter = createOpenAICompatibleAdapter({
+      api_base_url: "http://provider.local/v1",
+      fetcher: async () => ({
+        ok: false,
+        status: 400,
+        statusText: "Bad Request",
+        text: async () => JSON.stringify({ error: { code: providerCode, capability, message: "secret=/tmp/key" } }),
+        json: async () => ({})
+      })
+    });
+    await assert.rejects(async () => {
+      for await (const _chunk of adapter.stream(basicRequest)) { /* consume */ }
+    }, (error) => {
+      assert.equal(error.code, expected);
+      assert.equal(error.capability, capability);
+      assert.doesNotMatch(error.message, /secret|\/tmp/);
+      return true;
+    });
+  }
 });
 
 test("outbound guard blocks silent fetch and permits explicit provider calls", async () => {

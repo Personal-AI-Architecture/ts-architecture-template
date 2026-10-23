@@ -66,6 +66,23 @@ async function collectEvents(stream) {
   return events;
 }
 
+test("gateway forwards canonical model errors without saving a reply", async () => {
+  await withTempMemoryRoot(async (memoryRoot) => {
+    const memory = await createMemoryTools({ memory_root: memoryRoot });
+    const store = createGatewayConversationStore({ memory });
+    const engine = createEngineHandler(() => [{ event: "error", data: { code: "capability_unsupported", capability: "image_input", message: "Selected model does not support image_input." } }]);
+    const routes = createGatewayRoutes({ conversation_store: store, engine_handler: engine.handler });
+    const response = await routes.handle({ method: "POST", path: "/conversations/messages", headers: { "X-Actor-ID": "owner", "X-Actor-Permissions": "memory:read,memory:write" }, body: { content: [{ type: "text", text: "hello" }] } });
+    const events = await collectEvents(response.stream);
+    assert.deepEqual(events.map((event) => event.event), ["error"]);
+    assert.equal(events[0].data.code, "capability_unsupported");
+    assert.equal(events[0].data.capability, "image_input");
+    assert.equal(engine.calls.length, 1);
+    const detail = await routes.handle({ method: "GET", path: `/conversations/${response.headers["X-Conversation-ID"]}` });
+    assert.equal(detail.body.messages.length, 1);
+  });
+});
+
 test("gateway rejects public requests that include internal messages arrays", async () => {
   await withTempMemoryRoot(async (memoryRoot) => {
     const memory = await createMemoryTools({ memory_root: memoryRoot });
@@ -94,6 +111,23 @@ test("gateway rejects public requests that include internal messages arrays", as
     assert.equal(response.body.code, "invalid_request");
     assert.match(response.body.message, /must not include a messages array/i);
     assert.equal(engine.calls.length, 0);
+  });
+});
+
+test("gateway accepts inert part extensions and rejects unknown core fields", async () => {
+  await withTempMemoryRoot(async (memoryRoot) => {
+    const memory = await createMemoryTools({ memory_root: memoryRoot });
+    const store = createGatewayConversationStore({ memory });
+    const engine = createEngineHandler(() => [{ event: "done" }]);
+    const routes = createGatewayRoutes({ conversation_store: store, engine_handler: engine.handler });
+    const base = { method: "POST", path: "/conversations/messages", headers: { "X-Actor-ID": "actor-1", "X-Actor-Permissions": "memory:read,memory:write" } };
+    const valid = await routes.handle({ ...base, body: { content: [{ type: "text", text: "hello", extensions: { future_key: "ignored" } }] } });
+    assert.equal(valid.status, 200);
+    await collectEvents(valid.stream);
+    assert.equal(engine.calls.length, 1);
+    const invalid = await routes.handle({ ...base, body: { content: [{ type: "text", text: "hello", future_key: "not an extension" }] } });
+    assert.equal(invalid.status, 400);
+    assert.equal(engine.calls.length, 1);
   });
 });
 

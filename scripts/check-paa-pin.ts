@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
 const { execFileSync } = require("node:child_process");
 
 const ROOT = process.cwd();
@@ -52,9 +53,20 @@ function checkRemotePin(lock, errors) {
     }).trim();
     const remoteCommit = output.split(/\s+/)[0];
     if (remoteCommit !== lock.commit) {
-      errors.push(
-        `PAA ${lock.ref} moved from pinned ${lock.commit} to ${remoteCommit || "<unknown>"}; update paa.lock.json intentionally.`
-      );
+      const checkout = fs.mkdtempSync(path.join(os.tmpdir(), "paa-remote-contracts-"));
+      try {
+        execFileSync("git", ["init", "--bare", "-q", checkout], { stdio: "pipe" });
+        execFileSync("git", ["-C", checkout, "fetch", "--quiet", "--depth=1", lock.repository, `refs/heads/${lock.ref}`], { stdio: "pipe" });
+        for (const file of lock.contract_files) {
+          const content = execFileSync("git", ["-C", checkout, "show", `FETCH_HEAD:${file}`], { stdio: "pipe" });
+          const digest = crypto.createHash("sha256").update(content).digest("hex");
+          if (digest !== lock.sha256[file]) {
+            errors.push(`PAA ${lock.ref} changed ${file} after pinned ${lock.commit}; repin contracts intentionally.`);
+          }
+        }
+      } finally {
+        fs.rmSync(checkout, { recursive: true, force: true });
+      }
     }
   } catch (error) {
     errors.push(`Unable to verify remote PAA pin: ${error.message}`);
