@@ -73,3 +73,15 @@ jobs:
 
       - name: Acceptance check
         run: node ./scripts/acceptance-check.ts
+
+      - name: Checkout shared PAA validator
+        uses: actions/checkout@v4
+        with:
+          repository: Personal-AI-Architecture/paa-conformance-validator
+          path: paa-validator
+
+      - name: Validate running Gateway and restart persistence
+        run: node paa-validator/bin/paa-live-target.js --target paa.target.json
+
+      - name: Validate configured provider and model
+        run: node paa-validator/bin/paa-provider-target.js --target paa.target.json

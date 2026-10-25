@@ -184,6 +184,11 @@ function parseBearerToken(request: AuthRequest): string | null {
     return fallback.trim();
   }
 
+  const apiKey = extractHeaderValue(request.headers, "x-api-key");
+  if (apiKey && apiKey.trim().length > 0) {
+    return apiKey.trim();
+  }
+
   return null;
 }
 
