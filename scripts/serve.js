@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const http = require('node:http');
+const fs = require('node:fs');
 const { installTypeScriptRequire } = require('./ts-require.js');
 installTypeScriptRequire();
 
@@ -26,31 +27,50 @@ async function main() {
   const runtime = loadRuntimeConfiguration();
   if (runtime.auth_mode !== 'enforced') throw new Error('The HTTP starter requires enforced Auth.');
   const external = runtime.provider_adapter === 'openai-compatible';
-  if (external && (!process.env.PAA_MODEL_API_BASE_URL || !process.env.PAA_MODEL_ID || !process.env.PAA_MODEL_CONTEXT_LIMIT)) {
-    throw new Error('OpenAI-compatible mode requires PAA_MODEL_API_BASE_URL, PAA_MODEL_ID, and PAA_MODEL_CONTEXT_LIMIT.');
+  let profiles;
+  if (external) {
+    if (process.env.PAA_ADAPTER_CONFIG_FILE) {
+      profiles = JSON.parse(fs.readFileSync(process.env.PAA_ADAPTER_CONFIG_FILE, 'utf8')).provider_profiles;
+    } else if (process.env.PAA_MODEL_PROFILES_JSON) {
+      profiles = JSON.parse(process.env.PAA_MODEL_PROFILES_JSON);
+    } else if (process.env.PAA_MODEL_API_BASE_URL && process.env.PAA_MODEL_ID && process.env.PAA_MODEL_CONTEXT_LIMIT) {
+      profiles = { local: { base_url: process.env.PAA_MODEL_API_BASE_URL, api_key_env: 'PAA_MODEL_API_KEY',
+        model_context_limits: { [process.env.PAA_MODEL_ID]: Number(process.env.PAA_MODEL_CONTEXT_LIMIT) } } };
+    }
+    if (!profiles || !Object.keys(profiles).length) throw new Error('OpenAI-compatible mode requires provider profiles.');
   }
   const modelAdapter = loadModelAdapter({
     runtime,
     ...(runtime.provider_adapter === 'openai-compatible' ? {
-      openai_compatible: {
-        api_base_url: process.env.PAA_MODEL_API_BASE_URL,
-        model: process.env.PAA_MODEL_ID,
-        api_key: process.env.PAA_MODEL_API_KEY
-      }
+      openai_compatible: { provider_profiles: profiles }
     } : {})
   });
-  const memory = await createMemoryTools({ memory_root: runtime.memory_root });
+  const memory = await createMemoryTools({ memory_root: runtime.memory_root,
+    approvals: { decide: request => request.metadata?.key === 'preferences'
+      ? { approved: true, reason: 'Owner preference update.' } : false } });
+  const defaultProvider = process.env.PAA_DEFAULT_PROVIDER || (external ? Object.keys(profiles)[0] : 'local');
+  const defaultModel = process.env.PAA_MODEL_ID || (external ? Object.keys(profiles[defaultProvider]?.model_context_limits || {})[0] : 'mock');
+  if (!defaultModel) throw new Error('Configure a default model in the selected provider profile.');
+  if (!(await memory.read('preferences'))) {
+    await memory.write('preferences', { model: defaultModel, active_provider_profile: defaultProvider });
+  }
   const store = createGatewayConversationStore({ memory });
-  const contextLimits = external ? { local: { [process.env.PAA_MODEL_ID]: Number(process.env.PAA_MODEL_CONTEXT_LIMIT) } } : undefined;
+  const contextLimits = external ? Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, profile.model_context_limits])) : undefined;
   const routes = createGatewayRoutes({
     conversation_store: store,
     engine_handler: createEngineChatHandler({ model_adapter: modelAdapter, tools: [], ...(contextLimits ? { context_limits: contextLimits } : {}) }),
-    current_model: () => external ? process.env.PAA_MODEL_ID : 'mock',
-    current_provider: () => 'local',
+    current_selection: async () => {
+      const record = await memory.read('preferences');
+      const value = record?.value;
+      if (!value || typeof value.model !== 'string' || typeof value.active_provider_profile !== 'string') {
+        throw new Error('Model or provider preference missing.');
+      }
+      return { model: value.model, provider: value.active_provider_profile };
+    },
     ...(contextLimits ? { context_limits: contextLimits } : {})
   });
   const authProvider = await createAuthProvider({
-    state_root: runtime.memory_root,
+    state_root: process.env.PAA_AUTH_STATE_ROOT || `${runtime.memory_root}-auth`,
     auth_mode: runtime.auth_mode,
     seed_actors: [{ actor_id: 'local-owner', token, permissions: ['*'] }]
   });
@@ -67,7 +87,7 @@ async function main() {
         !['x-actor-id', 'x-actor-permissions'].includes(name.toLowerCase())));
       const authorized = await authenticate({ method: request.method, path: request.url, headers });
       let body;
-      if (request.method === 'POST') {
+      if (request.method === 'POST' || request.method === 'PUT') {
         const contentLength = Number(request.headers['content-length']);
         if (!Number.isSafeInteger(contentLength) || contentLength < 0) {
           sendJson(response, 411, { code: 'length_required', message: 'Content-Length required.' });
@@ -94,6 +114,23 @@ async function main() {
         }
         try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
         catch { sendJson(response, 400, { code: 'invalid_request', message: 'Malformed JSON.' }); return; }
+      }
+      if (request.url === '/owner/preferences') {
+        if (request.method === 'GET') {
+          const record = await memory.read('preferences');
+          sendJson(response, record ? 200 : 503, record?.value ?? { code: 'selection_unavailable', message: 'Preferences unavailable.' });
+          return;
+        }
+        if (request.method === 'PUT') {
+          if (!body || typeof body.model !== 'string' || !body.model ||
+              typeof body.active_provider_profile !== 'string' || !body.active_provider_profile) {
+            sendJson(response, 400, { code: 'invalid_request', message: 'Model and active_provider_profile are required.' });
+            return;
+          }
+          await memory.write('preferences', { model: body.model, active_provider_profile: body.active_provider_profile });
+          sendJson(response, 200, { model: body.model, active_provider_profile: body.active_provider_profile });
+          return;
+        }
       }
       const routed = await routes.handle({ method: request.method, path: request.url, headers: authorized.request.headers, body });
       response.writeHead(routed.status, routed.headers);

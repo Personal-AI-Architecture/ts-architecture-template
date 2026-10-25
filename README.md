@@ -62,7 +62,8 @@ The executable checks cover this starter's text-message journey and declared com
 
 ### Start the live Gateway
 
-Set a local test token, then start the HTTP server:
+Generate a local owner token with `openssl rand -hex 24`, store it outside
+Memory, and set `PAA_DEMO_API_KEY` to that value. Then start the HTTP server:
 
 ```bash
 export PAA_DEMO_API_KEY='replace-with-a-local-test-token'
@@ -85,10 +86,38 @@ and saves conversations under `RUNTIME_MEMORY_ROOT` (default
 `PAA_MODEL_ID`, `PAA_MODEL_CONTEXT_LIMIT`, and `PAA_MODEL_API_KEY` in the local
 environment before starting. The token is for local testing.
 
-Run the external live check from this workspace:
+For multiple OpenAI-compatible profiles, put their self-contained connection
+settings in an untracked adapter config file and set `PAA_ADAPTER_CONFIG_FILE`
+to its path. For example, an OpenRouter profile uses
+`https://openrouter.ai/api/v1` and an `OPENROUTER_API_KEY` environment variable
+([OpenRouter's endpoint](https://openrouter.ai/developers)). Set a verified model
+ID and conservative context limit in `model_context_limits`; never put the API
+key value in this file or Memory. `PAA_DEFAULT_PROVIDER` and `PAA_MODEL_ID`
+seed owner preferences only when they do not yet exist.
+
+```json
+{"provider_profiles":{"openrouter":{"base_url":"https://openrouter.ai/api/v1","api_key_env":"OPENROUTER_API_KEY","model_context_limits":{"your-model-id":8192}}}}
+```
+
+The authenticated `PUT /owner/preferences` route updates the owner's selection
+through Memory. For example, with another configured profile and model:
 
 ```bash
-node ../paa-templates/paa-conformance-validator/bin/paa-live-target.js --target paa.target.json
+curl -X PUT http://127.0.0.1:8000/owner/preferences \
+  -H 'Content-Type: application/json' -H "X-API-Key: $PAA_DEMO_API_KEY" \
+  -d '{"model":"your-model-id","active_provider_profile":"your-profile"}'
+```
+
+The next message reads that selection without restarting. An unknown model or
+profile is reported; it is never silently replaced with a default.
+
+The shared validator is a separate repository. From this template's root,
+clone it beside the template once, then run the live and provider checks:
+
+```bash
+git clone https://github.com/Personal-AI-Architecture/paa-conformance-validator.git ../paa-conformance-validator
+node ../paa-conformance-validator/bin/paa-live-target.js --target paa.target.json
+node ../paa-conformance-validator/bin/paa-provider-target.js --target paa.target.json
 ```
 
 ### 1) Install dependencies from a clean checkout

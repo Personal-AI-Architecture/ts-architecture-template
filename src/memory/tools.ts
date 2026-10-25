@@ -4,6 +4,7 @@ const fs = require("fs").promises as {
   mkdir(path: string, options?: { recursive?: boolean }): Promise<void>;
   readFile(path: string, encoding?: string): Promise<string>;
   readdir(path: string): Promise<string[]>;
+  rename(from: string, to: string): Promise<void>;
   rm(path: string, options?: { force?: boolean }): Promise<void>;
   writeFile(path: string, data: string, encoding?: string): Promise<void>;
 };
@@ -138,15 +139,24 @@ async function readStoredRecord(recordsDir: string, key: string): Promise<Memory
   try {
     const raw = await fs.readFile(filePath, "utf8");
     const parsed = JSON.parse(raw) as unknown;
-    return isMemoryRecord(parsed) ? parsed : null;
-  } catch {
-    return null;
+    if (!isMemoryRecord(parsed)) throw new Error(`Invalid Memory record: ${key}`);
+    return parsed;
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return null;
+    throw error;
   }
 }
 
 async function writeStoredRecord(recordsDir: string, record: MemoryRecord<unknown>): Promise<void> {
   const filePath = path.join(recordsDir, encodedFileName(record.key));
-  await fs.writeFile(filePath, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  const temporary = `${filePath}.${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`;
+  await fs.writeFile(temporary, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  try {
+    await fs.rename(temporary, filePath);
+  } catch (error) {
+    await fs.rm(temporary, { force: true });
+    throw error;
+  }
 }
 
 async function deleteStoredRecord(recordsDir: string, key: string): Promise<void> {
