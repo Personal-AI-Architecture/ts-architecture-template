@@ -4,6 +4,10 @@
 
 A contract-first scaffold for building a personal AI system on the [Personal AI Architecture](https://personalaiarchitecture.org).
 
+The current contract pin is recorded in `paa.lock.json`. The architecture has
+a `v1.0-rc.1` tag; the template's live check below verifies a bounded Gateway
+journey against its pinned contract, not complete product conformance.
+
 Four components:
 
 - `memory`
@@ -55,6 +59,37 @@ After creating your new repository from this template:
 The executable checks cover this starter's text-message journey and declared component boundaries. Pinning the full PAA contract set does not by itself certify unimplemented product-specific paths such as production authentication, approval policy, or multimodal provider handling.
 
 ## 5-Minute Developer Onboarding
+
+### Start the live Gateway
+
+Set a local test token, then start the HTTP server:
+
+```bash
+export PAA_DEMO_API_KEY='replace-with-a-local-test-token'
+npm start
+```
+
+Send a canonical PAA message from another terminal:
+
+```bash
+curl -N -X POST http://127.0.0.1:8000/conversations/messages \
+  -H 'Content-Type: application/json' \
+  -H "X-API-Key: $PAA_DEMO_API_KEY" \
+  -d '{"content":[{"type":"text","text":"Explain PAA."}]}'
+```
+
+The server accepts `X-API-Key` and Bearer auth, rejects requests over 1 MiB,
+and saves conversations under `RUNTIME_MEMORY_ROOT` (default
+`.runtime-memory/development`). For an OpenAI-compatible adapter, set
+`RUNTIME_PROVIDER_ADAPTER=openai-compatible`, `PAA_MODEL_API_BASE_URL`,
+`PAA_MODEL_ID`, `PAA_MODEL_CONTEXT_LIMIT`, and `PAA_MODEL_API_KEY` in the local
+environment before starting. The token is for local testing.
+
+Run the external live check from this workspace:
+
+```bash
+node ../paa-templates/paa-conformance-validator/bin/paa-live-target.js --target paa.target.json
+```
 
 ### 1) Install dependencies from a clean checkout
 

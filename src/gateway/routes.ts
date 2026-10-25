@@ -241,6 +241,7 @@ function toSafeErrorEvent(message: string): GatewayStreamEvent {
   return {
     event: "error",
     data: {
+      _event_type: "error",
       code: "provider_error",
       message: toSafeClientMessage(message, "Model provider failed to complete the stream.")
     }
@@ -403,6 +404,7 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
               event: "text-delta",
               data: {
                 ...data,
+                _event_type: "text-delta",
                 content: text
               }
             };
@@ -420,20 +422,20 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
               if (approvals.approval_request) {
                 yield {
                   event: "approval-request",
-                  data: approvals.approval_request
+                  data: { ...approvals.approval_request, _event_type: "approval-request" }
                 };
               }
               if (approvals.approval_result) {
                 yield {
                   event: "approval-result",
-                  data: approvals.approval_result
+                  data: { ...approvals.approval_result, _event_type: "approval-result" }
                 };
               }
             }
             const publicData = stripApprovalData(data);
             yield {
               event: engineEvent.event,
-              ...(publicData ? { data: publicData } : {})
+              data: { ...(publicData ?? {}), _event_type: engineEvent.event }
             };
             if (engineEvent.event === "error") {
               return;
@@ -460,7 +462,8 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
             event: "done",
             data: {
               ...(cloneEventData(engineEvent.data) ?? {}),
-              ...completionData
+              ...completionData,
+              _event_type: "done"
             }
           };
           return;
@@ -480,7 +483,7 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
           };
           yield {
             event: "done",
-            data: completionData
+            data: { ...completionData, _event_type: "done" }
           };
         }
       } catch (error) {
@@ -510,20 +513,43 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
     async handle(request: GatewayRouteRequest): Promise<GatewayRouteResponse> {
       const method = normalizeMethod(request?.method);
       const path = typeof request?.path === "string" ? request.path : "";
+      const routePath = path.split("?", 1)[0];
 
-      if (method === "POST" && (path === "/conversations/messages" || path === "/chat")) {
+      if (method === "POST" && (routePath === "/conversations/messages" || routePath === "/chat")) {
         return routeMessage(request);
       }
 
-      if (method === "GET" && path === "/conversations") {
+      if (method === "GET" && routePath === "/conversations") {
+        const query = new URLSearchParams(path.includes("?") ? path.slice(path.indexOf("?") + 1) : "");
+        const limit = query.has("limit") ? Number(query.get("limit")) : 20;
+        const offset = query.has("offset") ? Number(query.get("offset")) : 0;
+        const from = query.get("from");
+        const to = query.get("to");
+        if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0 ||
+            (from !== null && Number.isNaN(Date.parse(from))) || (to !== null && Number.isNaN(Date.parse(to)))) {
+          return createJsonResponse(400, { code: "invalid_request", message: "Invalid conversation filter." });
+        }
         const conversations = await config.conversation_store.listConversations();
+        const search = (query.get("search") ?? "").toLowerCase();
+        const filtered = [];
+        for (const conversation of conversations) {
+          if (from !== null && Date.parse(conversation.created_at) < Date.parse(from)) continue;
+          if (to !== null && Date.parse(conversation.created_at) > Date.parse(to)) continue;
+          if (search) {
+            const detail = await config.conversation_store.getConversationDetail(conversation.id);
+            if (!detail || !JSON.stringify(detail.messages).toLowerCase().includes(search)) continue;
+          }
+          filtered.push(conversation);
+        }
         return createJsonResponse(200, {
-          conversations,
-          total: conversations.length
+          conversations: filtered.slice(offset, offset + limit),
+          total: filtered.length,
+          limit,
+          offset
         });
       }
 
-      const detailConversationId = conversationDetailPathConversationId(path);
+      const detailConversationId = conversationDetailPathConversationId(routePath);
       if (method === "GET" && detailConversationId) {
         const detail = await config.conversation_store.getConversationDetail(detailConversationId);
         if (!detail) {
@@ -535,7 +561,7 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
         return createJsonResponse(200, detail);
       }
 
-      const messageConversationId = messageRoutePathConversationId(path);
+      const messageConversationId = messageRoutePathConversationId(routePath);
       if (method === "POST" && messageConversationId) {
         return routeMessage(request, messageConversationId);
       }
