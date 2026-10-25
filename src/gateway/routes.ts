@@ -53,6 +53,7 @@ export interface GatewayRoutesConfig {
   engine_handler: GatewayEngineHandler;
   current_model?: () => string;
   current_provider?: () => string;
+  current_selection?: () => Promise<{ model: string; provider: string }>;
   context_limits?: ContextLimits;
   context_tools?: ToolDefinition[];
 }
@@ -317,6 +318,28 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
     }
 
     const requestMetadata = parsed.value.metadata ?? {};
+    let selectedModel: string;
+    let selectedProvider: string;
+    try {
+      const selection = config.current_selection
+        ? await config.current_selection()
+        : { model: config.current_model?.() ?? "mock", provider: config.current_provider?.() ?? "local" };
+      selectedModel = selection.model;
+      selectedProvider = selection.provider;
+      if (!selectedModel || !selectedProvider) throw new Error("Missing model or provider preference.");
+    } catch {
+      return createJsonResponse(503, {
+        code: "selection_unavailable",
+        message: "Current model and provider preferences are unavailable."
+      });
+    }
+    const limit = modelLimit(config.context_limits ?? config.engine_handler.context_limits ?? DEFAULT_CONTEXT_LIMITS, selectedProvider, selectedModel);
+    if (limit === null) {
+      return createJsonResponse(503, {
+        code: "context_limit_unknown",
+        message: "No safe context limit for selected provider and model."
+      });
+    }
     let conversationId = requestedConversationId;
     if (!conversationId) {
       const created = await config.conversation_store.createConversation(requestMetadata);
@@ -337,15 +360,6 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
       parsed.value.content
     );
     const correlationId = toCorrelationId(requestMetadata);
-    const selectedModel = config.current_model?.() ?? "mock";
-    const selectedProvider = config.current_provider?.() ?? "local";
-    const limit = modelLimit(config.context_limits ?? config.engine_handler.context_limits ?? DEFAULT_CONTEXT_LIMITS, selectedProvider, selectedModel);
-    if (limit === null) {
-      return createJsonResponse(503, {
-        code: "context_limit_unknown",
-        message: "No safe context limit for selected provider and model."
-      });
-    }
     const selection = selectCompleteTurns(userMessage.messages, config.context_tools ?? [], limit);
     if (!selection) {
       return createJsonResponse(422, {

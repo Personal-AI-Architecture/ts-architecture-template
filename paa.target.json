@@ -2,7 +2,7 @@
   "name": "ts-architecture-template",
   "language": "typescript",
   "root": ".",
-  "live": { "start": "node scripts/serve.js" },
+  "live": { "start": "node scripts/serve.js", "preference_path": "/owner/preferences" },
   "contracts": {
     "lock_file": "paa.lock.json"
   },
