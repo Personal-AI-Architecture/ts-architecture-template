@@ -5,10 +5,12 @@ installTypeScriptRequire();
 const { createMcpToolSource } = require('../../src/adapters/mcp-tool-source.ts');
 const { createToolExecutor } = require('../../src/agent-loop/tool-executor.ts');
 const { createAgentLoopChatHandler } = require('../../src/agent-loop/index.ts');
+const { currentOutboundNetworkPermit } = require('../../src/types/network.ts');
 
 test('MCP tool-source adapter binds configured identity and forwards calls', async () => {
   const methods = [];
   const transport = async (_url, init) => {
+    assert.equal(currentOutboundNetworkPermit()?.channel, 'tool');
     const request = JSON.parse(init.body);
     methods.push(request.method);
     if (request.method === 'notifications/initialized') return new Response('', { status: 202 });

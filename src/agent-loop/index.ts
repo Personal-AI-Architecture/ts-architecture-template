@@ -453,7 +453,14 @@ export function createAgentLoopChatHandler(config: AgentLoopConfig): AgentLoopCh
       try {
         const loaded = config.load_tools ? await config.load_tools() : undefined;
         loop = createAgentLoop(loaded ? { ...config, ...loaded } : config);
-      } catch {
+      } catch (error) {
+        emitAuditLog({
+          category: "agent-loop",
+          action: "tool_source_discovery_error",
+          outcome: "failure",
+          correlation_id: bodyWithActorMetadata.metadata.correlation_id,
+          diagnostics: toErrorDiagnostics(error)
+        });
         yield createErrorEvent("tool_error", "Configured tool source is unavailable.");
         return;
       }

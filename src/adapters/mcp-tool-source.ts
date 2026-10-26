@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "../types/contracts";
+import { withOutboundNetworkPermit } from "../types/network";
 
 export interface McpToolSourceConfig {
   id: string;
@@ -20,7 +21,7 @@ export function createMcpToolSource(config: McpToolSourceConfig, transport: type
   const knownNames = new Set<string>();
 
   async function send(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const response = await transport(config.url, {
+    const response = await withOutboundNetworkPermit({ channel: "tool", operation: method, target: config.url }, () => transport(config.url, {
       method: "POST",
       headers: {
         Accept: "application/json, text/event-stream",
@@ -30,7 +31,7 @@ export function createMcpToolSource(config: McpToolSourceConfig, transport: type
         ...config.headers
       },
       body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params })
-    });
+    }));
     if (!response.ok) throw new Error(`MCP request failed (${response.status}).`);
     sessionId = response.headers.get("Mcp-Session-Id") ?? sessionId;
     const body = await response.text();
@@ -46,11 +47,11 @@ export function createMcpToolSource(config: McpToolSourceConfig, transport: type
   async function initialize(): Promise<void> {
     if (initialized) return;
     await send("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "paa-template", version: "0.1.0" } });
-    const response = await transport(config.url, {
+    const response = await withOutboundNetworkPermit({ channel: "tool", operation: "notifications/initialized", target: config.url }, () => transport(config.url, {
       method: "POST",
       headers: { Accept: "application/json, text/event-stream", "Content-Type": "application/json", "MCP-Protocol-Version": "2025-03-26", ...(sessionId ? { "Mcp-Session-Id": sessionId } : {}), ...config.headers },
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })
-    });
+    }));
     if (!response.ok) throw new Error(`MCP initialization failed (${response.status}).`);
     initialized = true;
   }
