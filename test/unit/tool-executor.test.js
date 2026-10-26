@@ -25,7 +25,7 @@ after(() => {
   delete require.extensions[".ts"];
 });
 
-const { createToolExecutor } = require("../../src/engine/tool-executor.ts");
+const { createToolExecutor } = require("../../src/agent-loop/tool-executor.ts");
 
 const toolA = {
   type: "function",

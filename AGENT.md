@@ -7,7 +7,7 @@ This document defines implementation boundaries for autonomous coding agents in 
 - `src/memory/*`
   - Owns persistence, conversation storage records, history, and export.
   - Must not depend on other components.
-- `src/engine/*` (legacy path for the PAA Agent Loop)
+- `src/agent-loop/*`
   - Owns agent loop orchestration and tool execution.
   - Must not contain provider-specific transport logic.
 - `src/gateway/*`
@@ -30,7 +30,7 @@ When implementing, reviewing, or reconciling drift, use this order:
 
 1. `paa.lock.json` and `vendor/paa-contracts/`
 2. `contracts/openapi/gateway-api.yaml`
-3. `contracts/openapi/gateway-engine.yaml`
+3. `contracts/openapi/gateway-agent-loop.yaml`
 4. `contracts/openapi/model-api.yaml`
 5. `contracts/schemas/message.json`
 6. `scripts/check-paa-pin.ts`
@@ -55,7 +55,7 @@ If examples diverge from contracts/checks, contracts and conformance checks are 
 - Preserve gateway stream contract including `X-Conversation-ID`, `finish_reason`,
   and the assistant `message_id` in the `done` payload.
 - Preserve the PAA Agent Loop handoff contract: `POST /agent-loop/chat` with required `metadata.correlation_id`.
-- Do not introduce runtime provider/model/tool overrides in engine request metadata.
+- Do not introduce runtime provider/model/tool overrides in Agent Loop request metadata.
 - Keep adapter-format selection in runtime config. Read the active provider profile and model preference on every message; send both on every model request. Switching a listed profile or model requires no restart.
 - Keep import boundaries intact; no cross-component coupling outside allowed patterns in `scripts/check-imports.ts`.
 - Keep localhost-first boot defaults (`127.0.0.1`) and offline-capable local/mock path.

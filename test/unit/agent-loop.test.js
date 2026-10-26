@@ -25,8 +25,8 @@ after(() => {
   delete require.extensions[".ts"];
 });
 
-const { createAgentLoop, createEngineChatHandler } = require("../../src/engine/index.ts");
-const { createToolExecutor } = require("../../src/engine/tool-executor.ts");
+const { createAgentLoop, createAgentLoopChatHandler } = require("../../src/agent-loop/index.ts");
+const { createToolExecutor } = require("../../src/agent-loop/tool-executor.ts");
 
 const configuredTool = {
   name: "configured_tool",
@@ -336,7 +336,7 @@ test("agent loop emits approval semantics before tool_error on denied write tool
     loop.run({
       model: "mock", provider: "local",
       messages: [{ role: "user", content: "write memory" }],
-      metadata: { correlation_id: "corr-approval-engine" }
+      metadata: { correlation_id: "corr-approval-agent-loop" }
     })
   );
 
@@ -349,8 +349,8 @@ test("agent loop emits approval semantics before tool_error on denied write tool
   assert.equal(events[2].data.code, "tool_error");
 });
 
-test("engine chat handler enforces internal POST /agent-loop/chat semantics", async () => {
-  const handler = createEngineChatHandler({
+test("Agent Loop chat handler enforces internal POST /agent-loop/chat semantics", async () => {
+  const handler = createAgentLoopChatHandler({
     model_adapter: createRecordingAdapter(() => [{ type: "done" }]).adapter,
     tools: []
   });

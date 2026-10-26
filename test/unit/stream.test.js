@@ -26,12 +26,12 @@ after(() => {
 });
 
 const {
-  isAllowedEngineEventName,
+  isAllowedAgentLoopEventName,
   toErrorEventFromChunk,
   toStreamEventFromModelChunk
-} = require("../../src/engine/stream.ts");
+} = require("../../src/agent-loop/stream.ts");
 
-test("stream mapper emits only internal engine event names", () => {
+test("stream mapper emits only internal Agent Loop event names", () => {
   const chunks = [
     { type: "text-delta", delta: { text: "x" } },
     { type: "tool-call", delta: { id: "1", name: "x", arguments: "{}" } },
@@ -43,13 +43,13 @@ test("stream mapper emits only internal engine event names", () => {
   for (const chunk of chunks) {
     const event = toStreamEventFromModelChunk(chunk);
     assert.ok(event);
-    assert.equal(isAllowedEngineEventName(event.event), true);
+    assert.equal(isAllowedAgentLoopEventName(event.event), true);
   }
 
   assert.equal(toStreamEventFromModelChunk(chunks[0]).data.content, "x");
   assert.equal(toStreamEventFromModelChunk(chunks[3]).data.finish_reason, "stop");
 
-  assert.equal(isAllowedEngineEventName("approval-request"), false);
+  assert.equal(isAllowedAgentLoopEventName("approval-request"), false);
   assert.equal(toStreamEventFromModelChunk({ type: "unknown" }), null);
 });
 

@@ -11,11 +11,11 @@ const REQUIRED_FILES = [
   "src/adapters/loader.ts",
   "src/adapters/mock.ts",
   "src/adapters/openai-compatible.ts",
-  "src/engine/index.ts",
+  "src/agent-loop/index.ts",
   "src/types/contracts.ts"
 ];
 
-const FORBIDDEN_ENGINE_METADATA_KEYS = ["provider", "provider_adapter", "model", "tools", "tool_sources"];
+const FORBIDDEN_AGENT_LOOP_METADATA_KEYS = ["provider", "provider_adapter", "model", "tools", "tool_sources"];
 
 const PROVIDER_LOCKIN_TOKENS = ["/chat/completions", "api_base_url", "api_key", "openai-compatible"];
 
@@ -88,35 +88,35 @@ function checkContractsRuntimeConfig(contractsSource, errors) {
   }
 }
 
-function checkEngineMetadata(contractsSource, errors) {
+function checkAgentLoopMetadata(contractsSource, errors) {
   const metadataMatch = contractsSource.match(
-    /export\s+interface\s+EngineRequestMetadata\s*\{([\s\S]*?)\n\}/m
+    /export\s+interface\s+AgentLoopRequestMetadata\s*\{([\s\S]*?)\n\}/m
   );
 
   if (!metadataMatch) {
-    errors.push("EngineRequestMetadata contract is missing.");
+    errors.push("AgentLoopRequestMetadata contract is missing.");
     return;
   }
 
   const block = metadataMatch[1];
-  for (const forbiddenKey of FORBIDDEN_ENGINE_METADATA_KEYS) {
+  for (const forbiddenKey of FORBIDDEN_AGENT_LOOP_METADATA_KEYS) {
     const pattern = new RegExp(`\\b${forbiddenKey}\\s*\\??\\s*:`, "m");
     if (pattern.test(block)) {
-      errors.push(`EngineRequestMetadata must not include runtime reconfiguration key: ${forbiddenKey}`);
+      errors.push(`AgentLoopRequestMetadata must not include runtime reconfiguration key: ${forbiddenKey}`);
     }
   }
 }
 
-function checkEngineUsesConfiguredTools(engineSource, errors) {
-  if (!/configuredTools/.test(engineSource) || !/copyToolDefinitions\(config\.tools\s*\?\?\s*\[\]\)/.test(engineSource)) {
+function checkAgentLoopUsesConfiguredTools(agentLoopSource, errors) {
+  if (!/configuredTools/.test(agentLoopSource) || !/copyToolDefinitions\(config\.tools\s*\?\?\s*\[\]\)/.test(agentLoopSource)) {
     errors.push("Agent loop must derive tool list from configured tools.");
   }
 
-  if (!/toModelRequest\(messages,\s*configuredTools,\s*request\.model,\s*request\.provider\)/.test(engineSource)) {
+  if (!/toModelRequest\(messages,\s*configuredTools,\s*request\.model,\s*request\.provider\)/.test(agentLoopSource)) {
     errors.push("Agent loop must send configured tools to model adapter.");
   }
 
-  if (/request\.metadata\.(provider|provider_adapter|model|tools|tool_sources)\b/.test(engineSource)) {
+  if (/request\.metadata\.(provider|provider_adapter|model|tools|tool_sources)\b/.test(agentLoopSource)) {
     errors.push("Agent loop must not read provider/model/tool override keys from request metadata.");
   }
 }
@@ -279,7 +279,7 @@ async function checkModelSwapBehavior(errors) {
 }
 
 async function checkToolSwapBehavior(errors) {
-  const { createAgentLoop } = require("../src/engine/index.ts");
+  const { createAgentLoop } = require("../src/agent-loop/index.ts");
 
   const toolA = {
     type: "function",
@@ -389,17 +389,17 @@ async function runLockinCheck() {
 
   const loaderSource = readFile("src/adapters/loader.ts", errors);
   const contractsSource = readFile("src/types/contracts.ts", errors);
-  const engineSource = readFile("src/engine/index.ts", errors);
+  const agentLoopSource = readFile("src/agent-loop/index.ts", errors);
 
   if (loaderSource) {
     checkLoaderWiring(loaderSource, errors);
   }
   if (contractsSource) {
     checkContractsRuntimeConfig(contractsSource, errors);
-    checkEngineMetadata(contractsSource, errors);
+    checkAgentLoopMetadata(contractsSource, errors);
   }
-  if (engineSource) {
-    checkEngineUsesConfiguredTools(engineSource, errors);
+  if (agentLoopSource) {
+    checkAgentLoopUsesConfiguredTools(agentLoopSource, errors);
   }
 
   checkProviderDetailsConfinedToAdapters(errors);

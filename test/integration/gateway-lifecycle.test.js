@@ -33,7 +33,7 @@ const { createGatewayConversationStore } = require("../../src/gateway/conversati
 const { createGatewayRoutes } = require("../../src/gateway/routes.ts");
 const { createGatewayServer } = require("../../src/gateway/server.ts");
 
-function createEngineHandler(streamFactory) {
+function createAgentLoopHandler(streamFactory) {
   const calls = [];
   return {
     calls,
@@ -70,7 +70,7 @@ test("gateway server handles authenticated conversation lifecycle", async () => 
   await withTempMemoryRoot(async (memoryRoot) => {
     const memory = await createMemoryTools({ memory_root: memoryRoot });
     const store = createGatewayConversationStore({ memory });
-    const engine = createEngineHandler((index) => {
+    const agentLoop = createAgentLoopHandler((index) => {
       if (index === 0) {
         return [
           { event: "text-delta", data: { text: "First answer." } },
@@ -86,7 +86,7 @@ test("gateway server handles authenticated conversation lifecycle", async () => 
 
     const routes = createGatewayRoutes({
       conversation_store: store,
-      engine_handler: engine.handler
+      agent_loop_handler: agentLoop.handler
     });
 
     const server = createGatewayServer({
@@ -196,11 +196,11 @@ test("gateway server handles authenticated conversation lifecycle", async () => 
     assert.deepEqual(detailResponse.body.messages[2].content, [{ type: "text", text: "Second question" }]);
     assert.deepEqual(detailResponse.body.messages[3].content, [{ type: "text", text: "Second answer." }]);
 
-    assert.equal(engine.calls.length, 2);
-    assert.equal(engine.calls[0].path, "/agent-loop/chat");
-    assert.equal(engine.calls[0].headers["X-Actor-ID"], "actor-integration");
-    assert.equal(engine.calls[0].body.metadata.client_context.channel, "integration");
-    assert.equal(engine.calls[0].body.metadata.conversation_id, conversationId);
-    assert.equal(engine.calls[1].body.metadata.conversation_id, conversationId);
+    assert.equal(agentLoop.calls.length, 2);
+    assert.equal(agentLoop.calls[0].path, "/agent-loop/chat");
+    assert.equal(agentLoop.calls[0].headers["X-Actor-ID"], "actor-integration");
+    assert.equal(agentLoop.calls[0].body.metadata.client_context.channel, "integration");
+    assert.equal(agentLoop.calls[0].body.metadata.conversation_id, conversationId);
+    assert.equal(agentLoop.calls[1].body.metadata.conversation_id, conversationId);
   });
 });

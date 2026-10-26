@@ -1,7 +1,7 @@
 # PAA Compatibility Policy
 
 This template is pinned to the Personal AI Architecture contract source at
-commit `cfeb96df743feee91afc80ac81f0c4fd9a62c123`. The pin is recorded in
+commit `47d6471a8307fa59a83c58dd635820b0cb0965b6`. The pin is recorded in
 [`paa.lock.json`](../paa.lock.json), and the exact contract files are vendored
 under [`vendor/paa-contracts/`](../vendor/paa-contracts/).
 
@@ -24,8 +24,8 @@ cross-component payload must remain valid against the pinned PAA contracts.
 - `EXT-001` — `POST /chat` remains as a legacy template convenience alias for
   `POST /conversations/messages`. It is not part of the PAA contract and is
   tested separately from the canonical route.
-- `EXT-002` — Source paths and symbols under `src/engine/` retain the legacy
-  name because PAA still reserves `/agent-loop/chat` and `gateway-engine.yaml` in
+- `EXT-002` — Source paths and symbols under `src/agent-loop/` retain the legacy
+  name because PAA still reserves `/agent-loop/chat` and `gateway-agent-loop.yaml` in
   the current contract. New documentation uses “Agent Loop.”
 - `EXT-003` — The OpenAI-compatible provider transport may use provider-native
   `/chat/completions` details, but those details must remain inside

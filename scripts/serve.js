@@ -6,7 +6,9 @@ installTypeScriptRequire();
 
 const { loadRuntimeConfiguration } = require('../src/config/loader.ts');
 const { loadModelAdapter } = require('../src/adapters/loader.ts');
-const { createEngineChatHandler } = require('../src/engine/index.ts');
+const { createAgentLoopChatHandler } = require('../src/agent-loop/index.ts');
+const { createToolExecutor } = require('../src/agent-loop/tool-executor.ts');
+const { createMcpToolSource } = require('../src/adapters/mcp-tool-source.ts');
 const { createMemoryTools } = require('../src/memory/tools.ts');
 const { createGatewayConversationStore } = require('../src/gateway/conversation-store.ts');
 const { createGatewayRoutes } = require('../src/gateway/routes.ts');
@@ -55,10 +57,31 @@ async function main() {
     await memory.write('preferences', { model: defaultModel, active_provider_profile: defaultProvider });
   }
   const store = createGatewayConversationStore({ memory });
+  const sourceConfig = JSON.parse(process.env.PAA_MCP_SOURCES_JSON || '[]');
+  if (!Array.isArray(sourceConfig)) throw new Error('PAA_MCP_SOURCES_JSON must be an array.');
+  const sourceAdapters = sourceConfig.map(source => {
+    if (!source || !runtime.tool_sources.includes(source.id)) throw new Error('MCP source is not listed in tool_sources.');
+    return { id: source.id, adapter: createMcpToolSource(source) };
+  });
+  if (new Set(sourceAdapters.map(source => source.id)).size !== sourceAdapters.length) throw new Error('Duplicate MCP source ID.');
+  async function loadTools() {
+    const tools = [];
+    const handlers = {};
+    for (const { id, adapter } of sourceAdapters) {
+      for (const definition of await adapter.discover()) {
+        // Model function names are flat; the alias preserves source identity for duplicate names.
+        const alias = `${id}__${definition.name}`;
+        if (handlers[alias]) throw new Error(`Duplicate tool alias: ${alias}`);
+        tools.push({ ...definition, name: alias });
+        handlers[alias] = input => adapter.call(definition.name, input);
+      }
+    }
+    return { tools, tool_executor: createToolExecutor({ tools, handlers, allowed_tool_sources: runtime.tool_sources }) };
+  }
   const contextLimits = external ? Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, profile.model_context_limits])) : undefined;
   const routes = createGatewayRoutes({
     conversation_store: store,
-    engine_handler: createEngineChatHandler({ model_adapter: modelAdapter, tools: [], ...(contextLimits ? { context_limits: contextLimits } : {}) }),
+    agent_loop_handler: createAgentLoopChatHandler({ model_adapter: modelAdapter, tools: [], load_tools: loadTools, ...(contextLimits ? { context_limits: contextLimits } : {}) }),
     current_selection: async () => {
       const record = await memory.read('preferences');
       const value = record?.value;

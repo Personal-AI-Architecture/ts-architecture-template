@@ -100,7 +100,7 @@ async function runMessageStreamPersistenceExportChecks() {
     const conversationStore = createGatewayConversationStore({ memory });
     const routes = createGatewayRoutes({
       conversation_store: conversationStore,
-      engine_handler: {
+      agent_loop_handler: {
         async *handle() {
           yield {
             event: "text-delta",

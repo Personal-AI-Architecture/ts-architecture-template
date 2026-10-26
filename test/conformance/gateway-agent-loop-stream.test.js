@@ -25,7 +25,7 @@ after(() => {
   delete require.extensions[".ts"];
 });
 
-const { createEngineChatHandler } = require("../../src/engine/index.ts");
+const { createAgentLoopChatHandler } = require("../../src/agent-loop/index.ts");
 
 const allowedEvents = new Set(["text-delta", "tool-call", "tool-result", "done", "error"]);
 
@@ -44,10 +44,10 @@ async function collectEvents(stream) {
   return events;
 }
 
-test("gateway engine handler emits canonical stream events for tool + done flow", async () => {
+test("gateway Agent Loop handler emits canonical stream events for tool + done flow", async () => {
   let turn = 0;
 
-  const handler = createEngineChatHandler({
+  const handler = createAgentLoopChatHandler({
     model_adapter: {
       name: "conformance-adapter",
       async *stream() {
@@ -122,8 +122,8 @@ test("gateway engine handler emits canonical stream events for tool + done flow"
   assert.equal(events[events.length - 1].data.finish_reason, "stop");
 });
 
-test("gateway engine handler enforces endpoint and actor headers", async () => {
-  const handler = createEngineChatHandler({
+test("gateway Agent Loop handler enforces endpoint and actor headers", async () => {
+  const handler = createAgentLoopChatHandler({
     model_adapter: {
       name: "conformance-adapter",
       async *stream() {
@@ -136,7 +136,7 @@ test("gateway engine handler enforces endpoint and actor headers", async () => {
   const badPathEvents = await collectEvents(
     handler.handle({
       method: "POST",
-      path: "/engine/invalid",
+      path: "/agent-loop/invalid",
       headers: {
         "X-Actor-ID": "actor-conformance",
         "X-Actor-Permissions": "memory:read"

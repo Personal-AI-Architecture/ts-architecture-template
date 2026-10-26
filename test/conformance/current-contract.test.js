@@ -20,7 +20,7 @@ after(() => { if (previousTsLoader) require.extensions[".ts"] = previousTsLoader
 const { createMemoryTools } = require("../../src/memory/tools.ts");
 const { createGatewayConversationStore } = require("../../src/gateway/conversation-store.ts");
 const { createGatewayRoutes } = require("../../src/gateway/routes.ts");
-const { createAgentLoop, createEngineChatHandler } = require("../../src/engine/index.ts");
+const { createAgentLoop, createAgentLoopChatHandler } = require("../../src/agent-loop/index.ts");
 const { contextCost } = require("../../src/types/context.ts");
 const { createOpenAICompatibleAdapter } = require("../../src/adapters/openai-compatible.ts");
 
@@ -35,7 +35,7 @@ test("selected provider reaches model and saved replies retain model/provider", 
     const selected = { provider: "alpha", model: "m1" };
     const limits = { alpha: { m1: 8192 }, beta: { m2: 8192 } };
     const calls = [];
-    const handler = createEngineChatHandler({
+    const handler = createAgentLoopChatHandler({
       context_limits: limits,
       tools: [],
       model_adapter: { name: "recording", async *stream(request) {
@@ -44,7 +44,7 @@ test("selected provider reaches model and saved replies retain model/provider", 
         yield { type: "done" };
       } }
     });
-    const routes = createGatewayRoutes({ conversation_store: createGatewayConversationStore({ memory }), engine_handler: handler,
+    const routes = createGatewayRoutes({ conversation_store: createGatewayConversationStore({ memory }), agent_loop_handler: handler,
       current_model: () => selected.model, current_provider: () => selected.provider, context_limits: limits });
     const first = await routes.handle({ method: "POST", path: "/conversations/messages", headers, body });
     await events(first.stream);
@@ -64,8 +64,8 @@ test("unknown and oversized contexts block dispatch; omitted turns produce notic
     const memory = await createMemoryTools({ memory_root: memoryRoot });
     const calls = [];
     const limits = { local: {} };
-    const handler = createEngineChatHandler({ context_limits: limits, tools: [], model_adapter: { name: "recording", async *stream(request) { calls.push(request); yield { type: "text-delta", delta: { text: "answer" } }; yield { type: "done" }; } } });
-    const routes = createGatewayRoutes({ conversation_store: createGatewayConversationStore({ memory }), engine_handler: handler, context_limits: limits });
+    const handler = createAgentLoopChatHandler({ context_limits: limits, tools: [], model_adapter: { name: "recording", async *stream(request) { calls.push(request); yield { type: "text-delta", delta: { text: "answer" } }; yield { type: "done" }; } } });
+    const routes = createGatewayRoutes({ conversation_store: createGatewayConversationStore({ memory }), agent_loop_handler: handler, context_limits: limits });
     const unknown = await routes.handle({ method: "POST", path: "/conversations/messages", headers, body });
     assert.deepEqual([unknown.status, unknown.body.code], [503, "context_limit_unknown"]);
     limits.local.mock = 500;

@@ -1,5 +1,5 @@
 import {
-  type EngineRequestMetadata,
+  type AgentLoopRequestMetadata,
   type ToolCall,
   type ToolDefinition,
   normalizeToolCall,
@@ -10,7 +10,7 @@ import { emitAuditLog } from "../types/audit";
 import { toErrorDiagnostics } from "../types/safety";
 
 export interface ToolExecutionContext {
-  metadata: EngineRequestMetadata;
+  metadata: AgentLoopRequestMetadata;
 }
 
 export type ToolHandler = (
@@ -222,7 +222,7 @@ function withinAllowedSources(source: string | undefined, allowedSources: string
   return allowedSources.includes(source);
 }
 
-function resolveAllowedSources(configuredSources: string[], metadata: EngineRequestMetadata): string[] {
+function resolveAllowedSources(configuredSources: string[], metadata: AgentLoopRequestMetadata): string[] {
   const metadataSources = normalizeSourceList(metadata.allowed_tool_sources);
   if (configuredSources.length === 0) {
     return metadataSources;

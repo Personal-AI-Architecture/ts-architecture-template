@@ -32,7 +32,7 @@ const { bootRuntime } = require("../../src/config/boot.ts");
 const { installOutboundNetworkGuard, withOutboundNetworkPermit } = require("../../src/types/network.ts");
 const { createMemoryTools } = require("../../src/memory/tools.ts");
 const { createAuditLogger } = require("../../src/types/audit.ts");
-const { createToolExecutor } = require("../../src/engine/tool-executor.ts");
+const { createToolExecutor } = require("../../src/agent-loop/tool-executor.ts");
 
 test("runtime boot defaults to localhost and keeps offline provider path independent", async () => {
   let outboundCheckCalled = false;

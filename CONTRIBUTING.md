@@ -6,7 +6,7 @@ Thank you for contributing to this contract-first TypeScript architecture templa
 
 This repository is implementation-first and focuses on a reusable scaffold for:
 
-- Gateway, Agent Loop (legacy `engine` path), memory, and auth component boundaries
+- Gateway, Agent Loop (`src/agent-loop` path), memory, and auth component boundaries
 - OpenAPI/JSON Schema contract alignment
 - Conformance and lock-in guardrails
 - Local onboarding and acceptance flows

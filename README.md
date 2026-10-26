@@ -4,20 +4,19 @@
 
 A contract-first scaffold for building a personal AI system on the [Personal AI Architecture](https://personalaiarchitecture.org).
 
-The current contract pin is recorded in `paa.lock.json`. For the architecture's
-`v1.0-rc.1` newcomer test, use template commit `0861782` (the verified starting
-point). The tag is two documentation-only commits newer than the template's
-contract pin. The live check below verifies a bounded Gateway journey, not
-complete product conformance.
+The current contract pin is recorded in `paa.lock.json`. Use the matching
+architecture release candidate and the template commit named in its handoff
+for a newcomer test. The live check below verifies a bounded Gateway journey,
+not complete product conformance.
 
 Four components:
 
 - `memory`
-- `agent loop` (`src/engine`, legacy path)
+- `agent loop` (`src/agent-loop`)
 - `gateway`
 - `auth`
 
-This template enforces the pinned PAA contracts, import boundaries, and lock-in checks. Adapter format is configured at startup; the selected model and provider profile are read from Memory on every message. The in-process Agent Loop supports configured tools, but the `npm start` HTTP starter currently passes an empty tool list and does not load `tool_sources`. See [docs/paa-compatibility.md](docs/paa-compatibility.md) for the pin and compatibility policy, the [PAA architecture overview](https://github.com/Personal-AI-Architecture/the-architecture/blob/main/architecture/overview.md) for component names, and the [decision glossary](https://github.com/Personal-AI-Architecture/the-architecture/blob/main/maintainers/decision-glossary.md) for decision IDs.
+This template enforces the pinned PAA contracts, import boundaries, and lock-in checks. Adapter format is configured at startup; the selected model and provider profile are read from Memory on every message. The HTTP starter loads configured external MCP tool sources through its tool-source adapter. List source IDs in `tool_sources`, then set `PAA_MCP_SOURCES_JSON` to an array of `{ "id": "source-id", "url": "http://127.0.0.1:PORT/mcp" }` entries. The starter refreshes tool descriptions on every message, binds their source identity to the configured ID, and exposes model-facing names as `source-id__tool-name` to avoid collisions. The included adapter targets the MCP `2025-03-26` Streamable HTTP lifecycle; other MCP transports and the newer sessionless lifecycle require a separate adapter. See [docs/paa-compatibility.md](docs/paa-compatibility.md) for the pin and compatibility policy, the [PAA architecture overview](https://github.com/Personal-AI-Architecture/the-architecture/blob/main/architecture/overview.md) for component names, and the [decision glossary](https://github.com/Personal-AI-Architecture/the-architecture/blob/main/maintainers/decision-glossary.md) for decision IDs.
 
 The current contract checks cover per-request model and provider selection, provider-profile routing, saved reply provenance, context limits and notices, and overflow before a live tool-result continuation. The template is a starting point for an implementation, not a claim that every product-specific PAA conformance case is complete.
 
@@ -224,7 +223,7 @@ node ../paa-conformance-validator/bin/paa-validate.js \
 
 ### 5) Perform one config-only provider swap
 
-This proves provider selection is runtime-config driven and does not require editing the engine loop.
+This proves provider selection is runtime-config driven and does not require editing the Agent Loop.
 
 ```bash
 npm run demo:provider-swap
@@ -244,7 +243,7 @@ Client
   -> Gateway API (`/conversations/messages`, `/conversations`, `/conversations/{id}`, `/conversations/{id}/messages`)
      -> Gateway component (`src/gateway/*`)
         -> Internal contract: POST /agent-loop/chat
-           -> Agent Loop component (`src/engine/*`)
+           -> Agent Loop component (`src/agent-loop/*`)
               -> Adapters (`src/adapters/*`) -> Model API (`/completions`)
               -> Tools (validated by source + permissions)
                  -> Memory component (`src/memory/*`)
@@ -258,7 +257,7 @@ Shared contracts/types live in `src/types/*`.
 - Do not change public Gateway request shape from `{ content, metadata? }` to `{ messages, metadata }`.
 - Do not remove `finish_reason` or `message_id` from `done` payloads.
 - Do not remove `X-Conversation-ID` from streaming responses.
-- Do not add runtime provider/model/tool override keys to engine request metadata.
+- Do not add runtime provider/model/tool override keys to Agent Loop request metadata.
 - Do not move provider-specific tokens (for example `/chat/completions`, `api_key`) outside `src/adapters/`.
 - Do not introduce cross-component imports that violate `scripts/check-imports.ts`.
 - Do not weaken or bypass contract/conformance/lock-in checks.
@@ -271,7 +270,7 @@ Use artifacts in this order when implementing or reviewing changes:
 
 1. `paa.lock.json` and `vendor/paa-contracts/`
 2. `contracts/openapi/gateway-api.yaml`
-3. `contracts/openapi/gateway-engine.yaml`
+3. `contracts/openapi/gateway-agent-loop.yaml`
 4. `contracts/openapi/model-api.yaml`
 5. `contracts/schemas/message.json`
 6. `scripts/check-paa-pin.ts`

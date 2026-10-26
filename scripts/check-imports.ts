@@ -7,14 +7,14 @@ const { builtinModules } = require("node:module");
 const ROOT = process.cwd();
 const SRC_DIRECTORY = path.join(ROOT, "src");
 
-const COMPONENT_DIRECTORIES = ["auth", "gateway", "engine", "memory", "adapters", "config"];
+const COMPONENT_DIRECTORIES = ["auth", "gateway", "agent-loop", "memory", "adapters", "config"];
 const COMPONENT_SET = new Set(COMPONENT_DIRECTORIES);
 const SHARED_DIRECTORIES = new Set(["types"]);
 
 const ALLOWED_COMPONENT_DEPENDENCIES = {
   auth: new Set(["auth", "types"]),
   gateway: new Set(["gateway", "types"]),
-  engine: new Set(["engine", "types"]),
+  "agent-loop": new Set(["agent-loop", "types"]),
   memory: new Set(["memory", "types"]),
   adapters: new Set(["adapters", "types"]),
   config: new Set(["config", "types"])

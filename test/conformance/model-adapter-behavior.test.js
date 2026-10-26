@@ -27,7 +27,7 @@ after(() => {
 
 const { loadModelAdapter } = require("../../src/adapters/loader.ts");
 const { createOpenAICompatibleAdapter } = require("../../src/adapters/openai-compatible.ts");
-const { createAgentLoop } = require("../../src/engine/index.ts");
+const { createAgentLoop } = require("../../src/agent-loop/index.ts");
 
 async function collectEvents(stream) {
   const events = [];

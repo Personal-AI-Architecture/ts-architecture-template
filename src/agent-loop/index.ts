@@ -1,7 +1,7 @@
 import {
   type CanonicalMessage,
-  type EngineChatRequest,
-  type EngineStreamEvent,
+  type AgentLoopChatRequest,
+  type AgentLoopStreamEvent,
   type ModelAdapter,
   type ModelChatRequest,
   type ToolCall,
@@ -21,22 +21,23 @@ export interface AgentLoopConfig {
   tool_executor?: ToolExecutor;
   allowed_tool_sources?: string[];
   context_limits?: ContextLimits;
+  load_tools?: () => Promise<{ tools: ToolDefinition[]; tool_executor: ToolExecutor }>;
 }
 
 export interface AgentLoop {
-  run(request: EngineChatRequest): AsyncGenerator<EngineStreamEvent>;
+  run(request: AgentLoopChatRequest): AsyncGenerator<AgentLoopStreamEvent>;
 }
 
-export interface EngineChatHandlerRequest {
+export interface AgentLoopChatHandlerRequest {
   method: string;
   path: string;
   headers?: Record<string, string | string[] | undefined>;
-  body: EngineChatRequest;
+  body: AgentLoopChatRequest;
 }
 
-export interface EngineChatHandler {
+export interface AgentLoopChatHandler {
   readonly context_limits: ContextLimits;
-  handle(request: EngineChatHandlerRequest): AsyncGenerator<EngineStreamEvent>;
+  handle(request: AgentLoopChatHandlerRequest): AsyncGenerator<AgentLoopStreamEvent>;
 }
 
 interface ToolCallState {
@@ -97,7 +98,7 @@ function toModelRequest(messages: CanonicalMessage[], tools: ToolDefinition[], m
   };
 }
 
-function hasCorrelationId(request: EngineChatRequest): boolean {
+function hasCorrelationId(request: AgentLoopChatRequest): boolean {
   return typeof request?.metadata?.correlation_id === "string" && request.metadata.correlation_id.trim().length > 0;
 }
 
@@ -234,7 +235,7 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
     });
 
   return {
-    async *run(request: EngineChatRequest): AsyncGenerator<EngineStreamEvent> {
+    async *run(request: AgentLoopChatRequest): AsyncGenerator<AgentLoopStreamEvent> {
       const authContext = asRecord(request.auth_context);
       if (authContext && Object.keys(authContext).some((key) => !["actor", "authentication_id", "authenticated_at", "expires_at", "correlation_id"].includes(key))) {
         yield createErrorEvent("auth_error", "Authentication context was rejected.");
@@ -318,7 +319,7 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
           }
         } catch (error) {
           emitAuditLog({
-            category: "engine",
+            category: "agent-loop",
             action: "provider_stream_error",
             outcome: "failure",
             correlation_id: request.metadata.correlation_id,
@@ -342,7 +343,7 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
           executionResults = await toolExecutor.executeMany(toolCalls, { metadata: request.metadata });
         } catch (error) {
           emitAuditLog({
-            category: "engine",
+            category: "agent-loop",
             action: "tool_execution_error",
             outcome: "failure",
             correlation_id: request.metadata.correlation_id,
@@ -407,25 +408,23 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
   };
 }
 
-export function createEngineChatHandler(config: AgentLoopConfig): EngineChatHandler {
-  const loop = createAgentLoop(config);
-
+export function createAgentLoopChatHandler(config: AgentLoopConfig): AgentLoopChatHandler {
   return {
     context_limits: config.context_limits ?? config.model_adapter.context_limits ?? DEFAULT_CONTEXT_LIMITS,
-    async *handle(request: EngineChatHandlerRequest): AsyncGenerator<EngineStreamEvent> {
+    async *handle(request: AgentLoopChatHandlerRequest): AsyncGenerator<AgentLoopStreamEvent> {
       const method = typeof request?.method === "string" ? request.method.toUpperCase() : "";
       if (method !== "POST" || request?.path !== "/agent-loop/chat") {
-        yield createErrorEvent("provider_error", "Invalid engine chat endpoint request.");
+        yield createErrorEvent("provider_error", "Invalid Agent Loop chat endpoint request.");
         return;
       }
 
       if (!hasActorHeaders(request.headers)) {
-        yield createErrorEvent("provider_error", "Missing required engine actor headers.");
+        yield createErrorEvent("provider_error", "Missing required Agent Loop actor headers.");
         return;
       }
 
       if (!request?.body || !Array.isArray(request.body.messages) || !hasCorrelationId(request.body)) {
-        yield createErrorEvent("provider_error", "Invalid engine chat request payload.");
+        yield createErrorEvent("provider_error", "Invalid Agent Loop chat request payload.");
         return;
       }
 
@@ -441,7 +440,7 @@ export function createEngineChatHandler(config: AgentLoopConfig): EngineChatHand
         yield createErrorEvent("provider_error", "Invalid model or authenticated actor context.");
         return;
       }
-      const bodyWithActorMetadata: EngineChatRequest = {
+      const bodyWithActorMetadata: AgentLoopChatRequest = {
         ...request.body,
         metadata: {
           ...request.body.metadata,
@@ -450,6 +449,14 @@ export function createEngineChatHandler(config: AgentLoopConfig): EngineChatHand
         }
       };
 
+      let loop: AgentLoop;
+      try {
+        const loaded = config.load_tools ? await config.load_tools() : undefined;
+        loop = createAgentLoop(loaded ? { ...config, ...loaded } : config);
+      } catch {
+        yield createErrorEvent("tool_error", "Configured tool source is unavailable.");
+        return;
+      }
       yield* loop.run(bodyWithActorMetadata);
     }
   };

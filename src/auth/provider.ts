@@ -14,7 +14,7 @@ const crypto = require("crypto") as {
   };
 };
 
-import { type EngineActorHeaders } from "../types/contracts";
+import { type AgentLoopActorHeaders } from "../types/contracts";
 import { emitAuditLog } from "../types/audit";
 
 export interface AuthRequest {
@@ -108,7 +108,7 @@ export interface AuthProvider {
   authenticate(request: AuthRequest): Promise<AuthActor | null>;
   findActor(actorId: string): Promise<AuthActor | null>;
   authorize(actor: AuthActor | null, access: AuthorizationRequest): Promise<AuthorizationResult>;
-  buildActorHeaders(actor: AuthActor): EngineActorHeaders;
+  buildActorHeaders(actor: AuthActor): AgentLoopActorHeaders;
   whoami(actor: AuthActor | null): AuthActor | null;
   exportState(): Promise<AuthExportPayload>;
 }
@@ -545,7 +545,7 @@ export async function createAuthProvider(config: AuthProviderConfig): Promise<Au
     return result;
   }
 
-  function buildActorHeaders(actor: AuthActor): EngineActorHeaders {
+  function buildActorHeaders(actor: AuthActor): AgentLoopActorHeaders {
     return {
       "X-Actor-ID": actor.actor_id,
       "X-Actor-Permissions": normalizePermissions(actor.permissions).join(",")

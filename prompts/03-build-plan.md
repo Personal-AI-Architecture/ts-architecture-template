@@ -182,7 +182,7 @@ contract files in the reference repo when applicable.>
 
 | Component | Drift Pattern | How We Prevent It |
 |---|---|---|
-| <Engine / Memory / Auth / Gateway / etc> | <Pattern from the drift-guard> | <Test, contract check, explicit boundary, or success-criterion command> |
+| <Agent Loop / Memory / Auth / Gateway / etc> | <Pattern from the drift-guard> | <Test, contract check, explicit boundary, or success-criterion command> |
 | ... | ... | ... |
 
 ## Security Considerations
