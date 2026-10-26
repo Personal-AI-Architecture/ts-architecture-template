@@ -19,7 +19,7 @@ async function runDemoOnboarding() {
 
     const routes = createGatewayRoutes({
       conversation_store: conversationStore,
-      engine_handler: {
+      agent_loop_handler: {
         async *handle() {
           yield { event: 'text-delta', data: { text: 'hello ' } };
           yield { event: 'text-delta', data: { text: 'from mock stream' } };

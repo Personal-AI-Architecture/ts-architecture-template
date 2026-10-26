@@ -193,7 +193,7 @@ export interface GatewayListConversationsResponse {
   offset?: number;
 }
 
-export interface EngineRequestMetadata {
+export interface AgentLoopRequestMetadata {
   correlation_id: string;
   conversation_id?: string;
   trigger?: string;
@@ -203,32 +203,32 @@ export interface EngineRequestMetadata {
   allowed_tool_sources?: string[];
 }
 
-export interface EngineRequest {
+export interface AgentLoopRequest {
   messages: CanonicalMessage[];
-  metadata?: EngineRequestMetadata;
+  metadata?: AgentLoopRequestMetadata;
   model: string;
   provider: string;
   context_summary?: { source: "gateway"; method: "deterministic"; omitted_turn_count: number; text: string };
   auth_context: Record<string, unknown>;
 }
 
-export type EngineChatRequest = EngineRequest & {
-  metadata: EngineRequestMetadata;
+export type AgentLoopChatRequest = AgentLoopRequest & {
+  metadata: AgentLoopRequestMetadata;
 };
 
-export interface EngineActorHeaders {
+export interface AgentLoopActorHeaders {
   "X-Actor-ID": string;
   "X-Actor-Permissions": string;
 }
 
-export type EngineStreamEventName =
+export type AgentLoopStreamEventName =
   | "text-delta"
   | "tool-call"
   | "tool-result"
   | "done"
   | "error";
 
-export type EngineStreamErrorCode =
+export type AgentLoopStreamErrorCode =
   | "provider_error"
   | "model_unavailable"
   | "capability_unsupported"
@@ -237,8 +237,8 @@ export type EngineStreamErrorCode =
   | "context_overflow"
   | "context_limit_unknown";
 
-export interface EngineStreamEvent<TData = Record<string, unknown>> {
-  event: EngineStreamEventName;
+export interface AgentLoopStreamEvent<TData = Record<string, unknown>> {
+  event: AgentLoopStreamEventName;
   data?: TData;
 }
 

@@ -1,4 +1,4 @@
-import { type EngineActorHeaders } from "../types/contracts";
+import { type AgentLoopActorHeaders } from "../types/contracts";
 import { emitAuditLog } from "../types/audit";
 import {
   type AuthActor,
@@ -14,7 +14,7 @@ export interface AuthMiddlewareRequest extends AuthRequest {
   headers?: Record<string, string | string[] | undefined>;
   auth?: {
     actor: AuthActor;
-    actor_headers: EngineActorHeaders;
+    actor_headers: AgentLoopActorHeaders;
     authorization?: AuthorizationResult;
   };
 }
@@ -33,7 +33,7 @@ export interface AuthMiddlewareOptions {
 export interface AuthMiddlewareResult {
   authenticated: boolean;
   actor: AuthActor | null;
-  actor_headers?: EngineActorHeaders;
+  actor_headers?: AgentLoopActorHeaders;
   authorization?: AuthorizationResult;
   request: AuthMiddlewareRequest;
 }
@@ -80,7 +80,7 @@ function normalizeOptions(
 
 function attachActorHeaders(
   request: AuthMiddlewareRequest,
-  headers: EngineActorHeaders
+  headers: AgentLoopActorHeaders
 ): Record<string, string | string[] | undefined> {
   const current = request.headers ?? {};
   current["X-Actor-ID"] = headers["X-Actor-ID"];

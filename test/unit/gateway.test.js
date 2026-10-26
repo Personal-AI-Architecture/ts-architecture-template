@@ -42,7 +42,7 @@ async function withTempMemoryRoot(run) {
   }
 }
 
-function createEngineHandler(streamFactory) {
+function createAgentLoopHandler(streamFactory) {
   const calls = [];
   return {
     calls,
@@ -70,14 +70,14 @@ test("gateway forwards canonical model errors without saving a reply", async () 
   await withTempMemoryRoot(async (memoryRoot) => {
     const memory = await createMemoryTools({ memory_root: memoryRoot });
     const store = createGatewayConversationStore({ memory });
-    const engine = createEngineHandler(() => [{ event: "error", data: { code: "capability_unsupported", capability: "image_input", message: "Selected model does not support image_input." } }]);
-    const routes = createGatewayRoutes({ conversation_store: store, engine_handler: engine.handler });
+    const agentLoop = createAgentLoopHandler(() => [{ event: "error", data: { code: "capability_unsupported", capability: "image_input", message: "Selected model does not support image_input." } }]);
+    const routes = createGatewayRoutes({ conversation_store: store, agent_loop_handler: agentLoop.handler });
     const response = await routes.handle({ method: "POST", path: "/conversations/messages", headers: { "X-Actor-ID": "owner", "X-Actor-Permissions": "memory:read,memory:write" }, body: { content: [{ type: "text", text: "hello" }] } });
     const events = await collectEvents(response.stream);
     assert.deepEqual(events.map((event) => event.event), ["error"]);
     assert.equal(events[0].data.code, "capability_unsupported");
     assert.equal(events[0].data.capability, "image_input");
-    assert.equal(engine.calls.length, 1);
+    assert.equal(agentLoop.calls.length, 1);
     const detail = await routes.handle({ method: "GET", path: `/conversations/${response.headers["X-Conversation-ID"]}` });
     assert.equal(detail.body.messages.length, 1);
   });
@@ -87,10 +87,10 @@ test("gateway rejects public requests that include internal messages arrays", as
   await withTempMemoryRoot(async (memoryRoot) => {
     const memory = await createMemoryTools({ memory_root: memoryRoot });
     const store = createGatewayConversationStore({ memory });
-    const engine = createEngineHandler(() => [{ event: "done" }]);
+    const agentLoop = createAgentLoopHandler(() => [{ event: "done" }]);
     const routes = createGatewayRoutes({
       conversation_store: store,
-      engine_handler: engine.handler
+      agent_loop_handler: agentLoop.handler
     });
 
     const response = await routes.handle({
@@ -110,7 +110,7 @@ test("gateway rejects public requests that include internal messages arrays", as
     assert.equal(response.status, 400);
     assert.equal(response.body.code, "invalid_request");
     assert.match(response.body.message, /must not include a messages array/i);
-    assert.equal(engine.calls.length, 0);
+    assert.equal(agentLoop.calls.length, 0);
   });
 });
 
@@ -118,16 +118,16 @@ test("gateway accepts inert part extensions and rejects unknown core fields", as
   await withTempMemoryRoot(async (memoryRoot) => {
     const memory = await createMemoryTools({ memory_root: memoryRoot });
     const store = createGatewayConversationStore({ memory });
-    const engine = createEngineHandler(() => [{ event: "done" }]);
-    const routes = createGatewayRoutes({ conversation_store: store, engine_handler: engine.handler });
+    const agentLoop = createAgentLoopHandler(() => [{ event: "done" }]);
+    const routes = createGatewayRoutes({ conversation_store: store, agent_loop_handler: agentLoop.handler });
     const base = { method: "POST", path: "/conversations/messages", headers: { "X-Actor-ID": "actor-1", "X-Actor-Permissions": "memory:read,memory:write" } };
     const valid = await routes.handle({ ...base, body: { content: [{ type: "text", text: "hello", extensions: { future_key: "ignored" } }] } });
     assert.equal(valid.status, 200);
     await collectEvents(valid.stream);
-    assert.equal(engine.calls.length, 1);
+    assert.equal(agentLoop.calls.length, 1);
     const invalid = await routes.handle({ ...base, body: { content: [{ type: "text", text: "hello", future_key: "not an extension" }] } });
     assert.equal(invalid.status, 400);
-    assert.equal(engine.calls.length, 1);
+    assert.equal(agentLoop.calls.length, 1);
   });
 });
 
@@ -135,14 +135,14 @@ test("gateway streams responses with conversation header and completion payload"
   await withTempMemoryRoot(async (memoryRoot) => {
     const memory = await createMemoryTools({ memory_root: memoryRoot });
     const store = createGatewayConversationStore({ memory });
-    const engine = createEngineHandler(() => [
+    const agentLoop = createAgentLoopHandler(() => [
       { event: "text-delta", data: { text: "Hello there." } },
       { event: "done", data: { provider: "mock" } }
     ]);
 
     const routes = createGatewayRoutes({
       conversation_store: store,
-      engine_handler: engine.handler
+      agent_loop_handler: agentLoop.handler
     });
 
     const response = await routes.handle({
@@ -173,14 +173,14 @@ test("gateway streams responses with conversation header and completion payload"
     assert.ok(typeof doneEvent.data.message_id === "string");
     assert.equal(doneEvent.data.provider, "mock");
 
-    assert.equal(engine.calls.length, 1);
-    assert.equal(engine.calls[0].method, "POST");
-    assert.equal(engine.calls[0].path, "/agent-loop/chat");
-    assert.equal(engine.calls[0].headers["X-Actor-ID"], "actor-1");
-    assert.equal(engine.calls[0].headers["X-Actor-Permissions"], "memory:read,memory:write");
-    assert.equal(engine.calls[0].body.metadata.conversation_id, conversationId);
-    assert.ok(typeof engine.calls[0].body.metadata.correlation_id === "string");
-    assert.equal(engine.calls[0].body.metadata.client_context.topic, "contracts");
+    assert.equal(agentLoop.calls.length, 1);
+    assert.equal(agentLoop.calls[0].method, "POST");
+    assert.equal(agentLoop.calls[0].path, "/agent-loop/chat");
+    assert.equal(agentLoop.calls[0].headers["X-Actor-ID"], "actor-1");
+    assert.equal(agentLoop.calls[0].headers["X-Actor-Permissions"], "memory:read,memory:write");
+    assert.equal(agentLoop.calls[0].body.metadata.conversation_id, conversationId);
+    assert.ok(typeof agentLoop.calls[0].body.metadata.correlation_id === "string");
+    assert.equal(agentLoop.calls[0].body.metadata.client_context.topic, "contracts");
 
     const listResponse = await routes.handle({
       method: "GET",
@@ -211,7 +211,7 @@ test("gateway supports appending to existing conversations using canonical route
   await withTempMemoryRoot(async (memoryRoot) => {
     const memory = await createMemoryTools({ memory_root: memoryRoot });
     const store = createGatewayConversationStore({ memory });
-    const engine = createEngineHandler((index) => {
+    const agentLoop = createAgentLoopHandler((index) => {
       if (index === 0) {
         return [
           { event: "text-delta", data: { text: "First reply." } },
@@ -225,7 +225,7 @@ test("gateway supports appending to existing conversations using canonical route
     });
     const routes = createGatewayRoutes({
       conversation_store: store,
-      engine_handler: engine.handler
+      agent_loop_handler: agentLoop.handler
     });
 
     const createResponse = await routes.handle({
@@ -318,7 +318,7 @@ test("gateway keeps EXT-001 legacy /chat alias for approval payloads", async () 
   await withTempMemoryRoot(async (memoryRoot) => {
     const memory = await createMemoryTools({ memory_root: memoryRoot });
     const store = createGatewayConversationStore({ memory });
-    const engine = createEngineHandler(() => [
+    const agentLoop = createAgentLoopHandler(() => [
       {
         event: "tool-result",
         data: {
@@ -346,7 +346,7 @@ test("gateway keeps EXT-001 legacy /chat alias for approval payloads", async () 
 
     const routes = createGatewayRoutes({
       conversation_store: store,
-      engine_handler: engine.handler
+      agent_loop_handler: agentLoop.handler
     });
 
     const response = await routes.handle({

@@ -91,7 +91,7 @@ function runContractCheck() {
   }
 
   const gatewayApi = readFile("contracts/openapi/gateway-api.yaml", errors);
-  const gatewayAgentLoop = readFile("contracts/openapi/gateway-engine.yaml", errors);
+  const gatewayAgentLoop = readFile("contracts/openapi/gateway-agent-loop.yaml", errors);
   const modelApi = readFile("contracts/openapi/model-api.yaml", errors);
 
   checkGatewayApi(gatewayApi, errors);

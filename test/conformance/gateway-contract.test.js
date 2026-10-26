@@ -32,7 +32,7 @@ const { createMemoryTools } = require("../../src/memory/tools.ts");
 const { createGatewayConversationStore } = require("../../src/gateway/conversation-store.ts");
 const { createGatewayRoutes } = require("../../src/gateway/routes.ts");
 
-function createEngineHandler() {
+function createAgentLoopHandler() {
   return {
     async *handle() {
       yield { event: "text-delta", data: { text: "contract-ok" } };
@@ -64,7 +64,7 @@ test("gateway enforces public request shape and completion identifiers", async (
     const store = createGatewayConversationStore({ memory });
     const routes = createGatewayRoutes({
       conversation_store: store,
-      engine_handler: createEngineHandler()
+      agent_loop_handler: createAgentLoopHandler()
     });
 
     const badMessagesRequest = await routes.handle({
@@ -146,7 +146,7 @@ test("gateway supports the PAA create route and conversation append route", asyn
     const store = createGatewayConversationStore({ memory });
     const routes = createGatewayRoutes({
       conversation_store: store,
-      engine_handler: {
+      agent_loop_handler: {
         async *handle(request) {
           const turn = request.body.messages.length;
           yield { event: "text-delta", data: { text: `turn-${turn}` } };
@@ -215,7 +215,7 @@ test("current PAA request uses content parts, a per-turn model, and authenticate
       conversation_store: store,
       current_model: () => selectedModel,
       context_limits: { local: { "model-one": 8192, "model-two": 8192 } },
-      engine_handler: {
+      agent_loop_handler: {
         async *handle(request) {
           handoffs.push(request);
           yield { event: "text-delta", data: { content: "ok" } };

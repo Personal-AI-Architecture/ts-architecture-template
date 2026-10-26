@@ -6,9 +6,9 @@ const crypto = require("crypto") as {
 };
 
 import {
-  type EngineActorHeaders,
-  type EngineChatRequest,
-  type EngineStreamEvent,
+  type AgentLoopActorHeaders,
+  type AgentLoopChatRequest,
+  type AgentLoopStreamEvent,
   type GatewayPublicMessageRequest,
   type GatewayStreamEvent,
   type ToolDefinition
@@ -18,16 +18,16 @@ import { emitAuditLog } from "../types/audit";
 import { toErrorDiagnostics, toSafeClientMessage } from "../types/safety";
 import { type GatewayConversationStore } from "./conversation-store";
 
-export interface GatewayEngineHandlerRequest {
+export interface GatewayAgentLoopHandlerRequest {
   method: string;
   path: string;
   headers?: Record<string, string | string[] | undefined>;
-  body: EngineChatRequest;
+  body: AgentLoopChatRequest;
 }
 
-export interface GatewayEngineHandler {
+export interface GatewayAgentLoopHandler {
   readonly context_limits?: ContextLimits;
-  handle(request: GatewayEngineHandlerRequest): AsyncGenerator<EngineStreamEvent>;
+  handle(request: GatewayAgentLoopHandlerRequest): AsyncGenerator<AgentLoopStreamEvent>;
 }
 
 export interface GatewayRouteRequest {
@@ -50,7 +50,7 @@ export interface GatewayRoutes {
 
 export interface GatewayRoutesConfig {
   conversation_store: GatewayConversationStore;
-  engine_handler: GatewayEngineHandler;
+  agent_loop_handler: GatewayAgentLoopHandler;
   current_model?: () => string;
   current_provider?: () => string;
   current_selection?: () => Promise<{ model: string; provider: string }>;
@@ -113,7 +113,7 @@ function findHeaderValue(
 
 function extractActorHeaders(
   headers: Record<string, string | string[] | undefined> | undefined
-): EngineActorHeaders | null {
+): AgentLoopActorHeaders | null {
   const actorId = findHeaderValue(headers, "X-Actor-ID");
   const actorPermissions = findHeaderValue(headers, "X-Actor-Permissions");
 
@@ -293,8 +293,8 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
   if (!config?.conversation_store) {
     throw new Error("Gateway routes require a conversation store.");
   }
-  if (!config?.engine_handler) {
-    throw new Error("Gateway routes require an engine handler.");
+  if (!config?.agent_loop_handler) {
+    throw new Error("Gateway routes require an Agent Loop handler.");
   }
 
   async function routeMessage(
@@ -333,7 +333,7 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
         message: "Current model and provider preferences are unavailable."
       });
     }
-    const limit = modelLimit(config.context_limits ?? config.engine_handler.context_limits ?? DEFAULT_CONTEXT_LIMITS, selectedProvider, selectedModel);
+    const limit = modelLimit(config.context_limits ?? config.agent_loop_handler.context_limits ?? DEFAULT_CONTEXT_LIMITS, selectedProvider, selectedModel);
     if (limit === null) {
       return createJsonResponse(503, {
         code: "context_limit_unknown",
@@ -368,7 +368,7 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
       });
     }
 
-    const engineRequest: GatewayEngineHandlerRequest = {
+    const agentLoopRequest: GatewayAgentLoopHandlerRequest = {
       method: "POST",
       path: "/agent-loop/chat",
       headers: {
@@ -409,9 +409,9 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
             }
           };
         }
-        for await (const engineEvent of config.engine_handler.handle(engineRequest)) {
-          if (engineEvent.event === "text-delta") {
-            const data = cloneEventData(engineEvent.data) ?? {};
+        for await (const agentLoopEvent of config.agent_loop_handler.handle(agentLoopRequest)) {
+          if (agentLoopEvent.event === "text-delta") {
+            const data = cloneEventData(agentLoopEvent.data) ?? {};
             const text = typeof data.text === "string" ? data.text : typeof data.content === "string" ? data.content : "";
             assistantContent += text;
             yield {
@@ -426,12 +426,12 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
           }
 
           if (
-            engineEvent.event === "tool-call" ||
-            engineEvent.event === "tool-result" ||
-            engineEvent.event === "error"
+            agentLoopEvent.event === "tool-call" ||
+            agentLoopEvent.event === "tool-result" ||
+            agentLoopEvent.event === "error"
           ) {
-            const data = cloneEventData(engineEvent.data);
-            if (engineEvent.event === "tool-result") {
+            const data = cloneEventData(agentLoopEvent.data);
+            if (agentLoopEvent.event === "tool-result") {
               const approvals = pickApprovalData(data);
               if (approvals.approval_request) {
                 yield {
@@ -448,16 +448,16 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
             }
             const publicData = stripApprovalData(data);
             yield {
-              event: engineEvent.event,
-              data: { ...(publicData ?? {}), _event_type: engineEvent.event }
+              event: agentLoopEvent.event,
+              data: { ...(publicData ?? {}), _event_type: agentLoopEvent.event }
             };
-            if (engineEvent.event === "error") {
+            if (agentLoopEvent.event === "error") {
               return;
             }
             continue;
           }
 
-          if (engineEvent.event === "done") {
+          if (agentLoopEvent.event === "done") {
           const assistantMessage = await config.conversation_store.appendMessage(
             conversationId,
             "assistant",
@@ -466,8 +466,8 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
           );
           const completionData: Record<string, unknown> = {
             finish_reason:
-              typeof engineEvent.data?.finish_reason === "string" && engineEvent.data.finish_reason.length > 0
-                ? engineEvent.data.finish_reason
+              typeof agentLoopEvent.data?.finish_reason === "string" && agentLoopEvent.data.finish_reason.length > 0
+                ? agentLoopEvent.data.finish_reason
                 : "stop",
             message_id: assistantMessage.message_id
           };
@@ -475,7 +475,7 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
           yield {
             event: "done",
             data: {
-              ...(cloneEventData(engineEvent.data) ?? {}),
+              ...(cloneEventData(agentLoopEvent.data) ?? {}),
               ...completionData,
               _event_type: "done"
             }

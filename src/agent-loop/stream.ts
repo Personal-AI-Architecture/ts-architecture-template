@@ -1,12 +1,12 @@
 import {
-  type EngineStreamErrorCode,
-  type EngineStreamEvent,
-  type EngineStreamEventName,
+  type AgentLoopStreamErrorCode,
+  type AgentLoopStreamEvent,
+  type AgentLoopStreamEventName,
   type ModelStreamChunk
 } from "../types/contracts";
 import { toSafeClientMessage } from "../types/safety";
 
-const ALLOWED_ENGINE_EVENTS: EngineStreamEventName[] = [
+const ALLOWED_AGENT_LOOP_EVENTS: AgentLoopStreamEventName[] = [
   "text-delta",
   "tool-call",
   "tool-result",
@@ -28,7 +28,7 @@ function toStringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
-function defaultErrorMessage(code: EngineStreamErrorCode): string {
+function defaultErrorMessage(code: AgentLoopStreamErrorCode): string {
   if (code === "context_limit_unknown") {
     return "No safe context limit is known for the selected provider and model.";
   }
@@ -50,32 +50,32 @@ function defaultErrorMessage(code: EngineStreamErrorCode): string {
   return "Model provider failed to complete the stream.";
 }
 
-export function isAllowedEngineEventName(value: string): value is EngineStreamEventName {
-  return ALLOWED_ENGINE_EVENTS.includes(value as EngineStreamEventName);
+export function isAllowedAgentLoopEventName(value: string): value is AgentLoopStreamEventName {
+  return ALLOWED_AGENT_LOOP_EVENTS.includes(value as AgentLoopStreamEventName);
 }
 
-export function createTextDeltaEvent(data: Record<string, unknown>): EngineStreamEvent {
+export function createTextDeltaEvent(data: Record<string, unknown>): AgentLoopStreamEvent {
   return {
     event: "text-delta",
     data
   };
 }
 
-export function createToolCallEvent(data: Record<string, unknown>): EngineStreamEvent {
+export function createToolCallEvent(data: Record<string, unknown>): AgentLoopStreamEvent {
   return {
     event: "tool-call",
     data
   };
 }
 
-export function createToolResultEvent(data: Record<string, unknown>): EngineStreamEvent {
+export function createToolResultEvent(data: Record<string, unknown>): AgentLoopStreamEvent {
   return {
     event: "tool-result",
     data
   };
 }
 
-export function createDoneEvent(data?: Record<string, unknown>): EngineStreamEvent {
+export function createDoneEvent(data?: Record<string, unknown>): AgentLoopStreamEvent {
   const finishReason =
     (typeof data?.finish_reason === "string" && data.finish_reason) ||
     (typeof data?.reason === "string" && data.reason) ||
@@ -91,10 +91,10 @@ export function createDoneEvent(data?: Record<string, unknown>): EngineStreamEve
 }
 
 export function createErrorEvent(
-  code: EngineStreamErrorCode,
+  code: AgentLoopStreamErrorCode,
   overrideMessage?: string,
   capability?: string
-): EngineStreamEvent<{ code: EngineStreamErrorCode; message: string; capability?: string }> {
+): AgentLoopStreamEvent<{ code: AgentLoopStreamErrorCode; message: string; capability?: string }> {
   const message = toSafeClientMessage(overrideMessage, defaultErrorMessage(code));
   return {
     event: "error",
@@ -114,7 +114,7 @@ export function isContextOverflowError(error: unknown): boolean {
   return CONTEXT_OVERFLOW_PATTERN.test(message);
 }
 
-export function classifyProviderErrorCode(error: unknown): EngineStreamErrorCode {
+export function classifyProviderErrorCode(error: unknown): AgentLoopStreamErrorCode {
   const structured = asRecord(error);
   if (structured?.code === "model_unavailable") {
     return "model_unavailable";
@@ -125,12 +125,12 @@ export function classifyProviderErrorCode(error: unknown): EngineStreamErrorCode
   return isContextOverflowError(error) ? "context_overflow" : "provider_error";
 }
 
-export function toProviderErrorEvent(error: unknown): EngineStreamEvent {
+export function toProviderErrorEvent(error: unknown): AgentLoopStreamEvent {
   const code = classifyProviderErrorCode(error);
   return createErrorEvent(code, undefined, code === "capability_unsupported" ? toStringValue(asRecord(error)?.capability) : undefined);
 }
 
-export function toErrorEventFromChunk(chunk: ModelStreamChunk): EngineStreamEvent {
+export function toErrorEventFromChunk(chunk: ModelStreamChunk): AgentLoopStreamEvent {
   const delta = asRecord(chunk.delta);
   const rawCode = toStringValue(delta?.code);
   const rawMessage = toStringValue(delta?.message);
@@ -159,7 +159,7 @@ export function toErrorEventFromChunk(chunk: ModelStreamChunk): EngineStreamEven
   return createErrorEvent("provider_error", rawMessage);
 }
 
-export function toStreamEventFromModelChunk(chunk: ModelStreamChunk): EngineStreamEvent | null {
+export function toStreamEventFromModelChunk(chunk: ModelStreamChunk): AgentLoopStreamEvent | null {
   const data = asRecord(chunk.delta) ?? {};
 
   if (chunk.type === "text-delta") {
