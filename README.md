@@ -4,9 +4,11 @@
 
 A contract-first scaffold for building a personal AI system on the [Personal AI Architecture](https://personalaiarchitecture.org).
 
-The current contract pin is recorded in `paa.lock.json`. The architecture has
-a `v1.0-rc.1` tag; the template's live check below verifies a bounded Gateway
-journey against its pinned contract, not complete product conformance.
+The current contract pin is recorded in `paa.lock.json`. For the architecture's
+`v1.0-rc.1` newcomer test, use template commit `0861782` (the verified starting
+point). The tag is two documentation-only commits newer than the template's
+contract pin. The live check below verifies a bounded Gateway journey, not
+complete product conformance.
 
 Four components:
 
@@ -15,7 +17,7 @@ Four components:
 - `gateway`
 - `auth`
 
-This template enforces the pinned PAA contracts, import boundaries, and lock-in checks. Adapter format and tools are configured at startup; the selected model and provider profile are supplied on every request. See [docs/paa-compatibility.md](docs/paa-compatibility.md) for the pin and compatibility policy. To understand the architecture itself, see the [PAA architecture overview](https://github.com/Personal-AI-Architecture/the-architecture/blob/main/architecture/overview.md).
+This template enforces the pinned PAA contracts, import boundaries, and lock-in checks. Adapter format is configured at startup; the selected model and provider profile are read from Memory on every message. The in-process Agent Loop supports configured tools, but the `npm start` HTTP starter currently passes an empty tool list and does not load `tool_sources`. See [docs/paa-compatibility.md](docs/paa-compatibility.md) for the pin and compatibility policy, the [PAA architecture overview](https://github.com/Personal-AI-Architecture/the-architecture/blob/main/architecture/overview.md) for component names, and the [decision glossary](https://github.com/Personal-AI-Architecture/the-architecture/blob/main/maintainers/decision-glossary.md) for decision IDs.
 
 The current contract checks cover per-request model and provider selection, provider-profile routing, saved reply provenance, context limits and notices, and overflow before a live tool-result continuation. The template is a starting point for an implementation, not a claim that every product-specific PAA conformance case is complete.
 
@@ -58,7 +60,7 @@ After creating your new repository from this template:
 
 The executable checks cover this starter's text-message journey and declared component boundaries. Pinning the full PAA contract set does not by itself certify unimplemented product-specific paths such as production authentication, approval policy, or multimodal provider handling.
 
-## 5-Minute Developer Onboarding
+## Live Gateway quickstart
 
 ### Start the live Gateway
 
@@ -81,23 +83,35 @@ curl -N -X POST http://127.0.0.1:8000/conversations/messages \
 
 The server accepts `X-API-Key` and Bearer auth, rejects requests over 1 MiB,
 and saves conversations under `RUNTIME_MEMORY_ROOT` (default
-`.runtime-memory/development`). For an OpenAI-compatible adapter, set
+`.runtime-memory/development`). Auth state lives beside that root by default;
+set `PAA_AUTH_STATE_ROOT` to keep it elsewhere. The token is for local testing.
+
+### Choose a provider configuration
+
+For a single OpenAI-compatible profile named `local`, set
 `RUNTIME_PROVIDER_ADAPTER=openai-compatible`, `PAA_MODEL_API_BASE_URL`,
 `PAA_MODEL_ID`, `PAA_MODEL_CONTEXT_LIMIT`, and `PAA_MODEL_API_KEY` in the local
-environment before starting. The token is for local testing.
+environment before starting.
 
-For multiple OpenAI-compatible profiles, put their self-contained connection
+For named OpenAI-compatible profiles, put their connection
 settings in an untracked adapter config file and set `PAA_ADAPTER_CONFIG_FILE`
 to its path. For example, an OpenRouter profile uses
 `https://openrouter.ai/api/v1` and an `OPENROUTER_API_KEY` environment variable
 ([OpenRouter's endpoint](https://openrouter.ai/developers)). Set a verified model
 ID and conservative context limit in `model_context_limits`; never put the API
-key value in this file or Memory. `PAA_DEFAULT_PROVIDER` and `PAA_MODEL_ID`
-seed owner preferences only when they do not yet exist.
+key value in this file or Memory. The `api_key_env` field names the environment
+variable holding the key; it is `OPENROUTER_API_KEY` in this example, while the
+single-profile path above uses `PAA_MODEL_API_KEY`. `PAA_DEFAULT_PROVIDER` and
+`PAA_MODEL_ID` seed owner preferences only when they do not yet exist.
 
 ```json
-{"provider_profiles":{"openrouter":{"base_url":"https://openrouter.ai/api/v1","api_key_env":"OPENROUTER_API_KEY","model_context_limits":{"your-model-id":8192}}}}
+{"provider_profiles":{"openrouter":{"base_url":"https://openrouter.ai/api/v1","api_key_env":"OPENROUTER_API_KEY","model_context_limits":{"first-model-id":8192,"second-model-id":8192}}}}
 ```
+
+The adapter config is loaded at startup. To change the model without a restart,
+list every intended model under `model_context_limits` before starting; to
+change provider profile without a restart, load that profile at startup too.
+Check current model IDs with the provider before using them.
 
 The authenticated `PUT /owner/preferences` route updates the owner's selection
 through Memory. For example, with another configured profile and model:
@@ -108,8 +122,13 @@ curl -X PUT http://127.0.0.1:8000/owner/preferences \
   -d '{"model":"your-model-id","active_provider_profile":"your-profile"}'
 ```
 
-The next message reads that selection without restarting. An unknown model or
-profile is reported; it is never silently replaced with a default.
+The next message reads that selection without restarting. Currently this route
+stores any non-empty model and profile strings. If one is not configured, the
+next message returns `503 context_limit_unknown`; no default is substituted.
+Send another `PUT` with a configured selection to recover. A provider request
+failure appears as a generic `provider_error` to the client; the server's
+stdout audit/diagnostic output has the status for troubleshooting. A failed
+provider turn can leave its user message saved without an assistant reply.
 
 The shared validator is a separate repository. From this template's root,
 clone it beside the template once, then run the live and provider checks:
@@ -119,6 +138,17 @@ git clone https://github.com/Personal-AI-Architecture/paa-conformance-validator.
 node ../paa-conformance-validator/bin/paa-live-target.js --target paa.target.json
 node ../paa-conformance-validator/bin/paa-provider-target.js --target paa.target.json
 ```
+
+The direct `paa-live.js` check against an already-running server has 11 named
+checks. `paa-live-target.js` starts this template and adds four Memory/restart
+checks. `paa-provider-target.js` starts a separate server and controlled
+provider and adds six selection checks, for 21 total; it does not make a real
+provider call.
+
+## Offline mock demos and repository checks
+
+These numbered steps use in-process mock adapters. Use the live quickstart
+above to test the HTTP server and a real provider.
 
 ### 1) Install dependencies from a clean checkout
 
@@ -180,16 +210,16 @@ npm run check:conformance
 npm run acceptance:check
 ```
 
-These commands cover the pinned PAA contract mirror, boundary imports, lock-in gates, conformance tests, and acceptance checks. The canonical create route is `POST /conversations/messages`; the legacy `POST /chat` alias is documented as `EXT-001`.
+These commands cover the pinned PAA contract mirror, boundary imports, lock-in gates, conformance tests, and acceptance checks. The canonical create route is `POST /conversations/messages`; the legacy `POST /chat` alias is documented as [EXT-001](docs/paa-compatibility.md).
 
-From the parent workspace, the shared language-neutral validator runs the same
-target plus a direct comparison with the pinned PAA source checkout:
+Clone the architecture repository beside the template to compare against its
+current contract source, then run the shared validator from the template root:
 
 ```bash
-cd ../paa-templates/paa-conformance-validator
-node bin/paa-validate.js \
-  --target ../../ts-architecture-template/paa.target.json \
-  --source-checkout ../../personal-ai-architecture
+git clone https://github.com/Personal-AI-Architecture/the-architecture.git ../the-architecture
+node ../paa-conformance-validator/bin/paa-validate.js \
+  --target paa.target.json \
+  --source-checkout ../the-architecture
 ```
 
 ### 5) Perform one config-only provider swap
