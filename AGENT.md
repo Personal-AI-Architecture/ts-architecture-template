@@ -39,9 +39,11 @@ When implementing, reviewing, or reconciling drift, use this order:
 9. `scripts/check-lockin.ts`
 10. `test/conformance/*`
 
-The shared language-neutral validator is staged at
-`../paa-templates/paa-conformance-validator/` in the workspace and consumes
-`paa.target.json` when run against this checkout.
+The shared language-neutral validator is a separate repository. Clone
+`https://github.com/Personal-AI-Architecture/paa-conformance-validator.git`
+beside this template, then use `../paa-conformance-validator/bin/paa-validate.js`
+with this checkout's `paa.target.json`. The architecture source repository is
+`the-architecture`; clone it beside the template for `--source-checkout`.
 
 If examples diverge from contracts/checks, contracts and conformance checks are authoritative.
 
