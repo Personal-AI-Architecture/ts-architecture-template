@@ -100,6 +100,131 @@ test("agent loop refuses oversized live tool result before continuation", async 
   assert.deepEqual([stream.at(-1).event, stream.at(-1).data.code], ["error", "context_overflow"]);
 });
 
+test("real tool turns validate Agent Loop events and persist canonical tool parts across restart", async () => {
+  const memoryRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "paa-tool-turn-ts-"));
+  try {
+    const memory = await createMemoryTools({ memory_root: memoryRoot });
+    const tool = {
+      name: "ext__get_vault_code",
+      description: "Return a vault code.",
+      parameters: { type: "object", properties: { vault: { type: "string" } }, required: ["vault"] },
+      source: "ext",
+      source_kind: "mcp"
+    };
+    let modelTurn = 0;
+    const observedAgentLoopEvents = [];
+    const baseHandler = createAgentLoopChatHandler({
+      tools: [tool],
+      model_adapter: {
+        name: "tool-turn-recording",
+        async *stream() {
+          if (modelTurn++ === 0) {
+            yield {
+              type: "tool-call",
+              delta: {
+                id: "call-vault-1",
+                name: "ext__get_vault_code",
+                arguments: JSON.stringify({ vault: "alpha" })
+              }
+            };
+            yield { type: "done" };
+            return;
+          }
+          yield { type: "text-delta", delta: { text: "The vault code is VAULT-ALPHA." } };
+          yield { type: "done" };
+        }
+      },
+      tool_executor: {
+        async executeMany(toolCalls) {
+          return toolCalls.map((tool_call) => ({
+            ok: true,
+            tool_call,
+            output: { code: "VAULT-ALPHA" },
+            content: JSON.stringify({ code: "VAULT-ALPHA" })
+          }));
+        }
+      }
+    });
+    const handler = {
+      context_limits: baseHandler.context_limits,
+      async *handle(request) {
+        for await (const event of baseHandler.handle(request)) {
+          observedAgentLoopEvents.push(event);
+          yield event;
+        }
+      }
+    };
+    const store = createGatewayConversationStore({ memory });
+    const routes = createGatewayRoutes({
+      conversation_store: store,
+      agent_loop_handler: handler,
+      current_model: () => "mock",
+      current_provider: () => "local"
+    });
+
+    const response = await routes.handle({
+      method: "POST",
+      path: "/conversations/messages",
+      headers,
+      body
+    });
+    const publicEvents = await events(response.stream);
+
+    assert.equal(response.status, 200);
+    assert.ok(publicEvents.some((event) => event.event === "tool-call"));
+    assert.ok(publicEvents.some((event) => event.event === "tool-result"));
+    for (const event of observedAgentLoopEvents) {
+      const payload = { _event_type: event.event, ...(event.data || {}) };
+      if (event.event === "tool-call") {
+        assert.equal(typeof payload.id, "string");
+        assert.equal(typeof payload.source_id, "string");
+        assert.ok(payload.source_id.length > 0);
+        assert.equal(typeof payload.name, "string");
+        assert.equal(typeof payload.arguments, "object");
+      } else if (event.event === "tool-result") {
+        assert.equal(typeof payload.id, "string");
+        if (payload.output !== undefined) assert.equal(typeof payload.output, "string");
+      } else if (event.event === "text-delta") {
+        assert.equal(typeof payload.content, "string");
+      } else if (event.event === "done") {
+        assert.equal(typeof payload.finish_reason, "string");
+      } else if (event.event === "error") {
+        assert.equal(typeof payload.code, "string");
+        assert.equal(typeof payload.message, "string");
+      }
+    }
+
+    const conversationId = response.headers["X-Conversation-ID"];
+    const detail = await routes.handle({ method: "GET", path: `/conversations/${conversationId}` });
+    assert.deepEqual(detail.body.messages.map((message) => message.role), ["user", "assistant", "tool", "assistant"]);
+    const toolAssistant = detail.body.messages[1];
+    assert.deepEqual(toolAssistant.content.find((part) => part.type === "tool_call"), {
+      type: "tool_call",
+      id: "call-vault-1",
+      source_id: "ext",
+      name: "ext__get_vault_code",
+      arguments: { vault: "alpha" }
+    });
+    assert.deepEqual(detail.body.messages[2].content[0], {
+      type: "tool_result",
+      tool_call_id: "call-vault-1",
+      result: { code: "VAULT-ALPHA" }
+    });
+
+    const restartedMemory = await createMemoryTools({ memory_root: memoryRoot });
+    const restartedRoutes = createGatewayRoutes({
+      conversation_store: createGatewayConversationStore({ memory: restartedMemory }),
+      agent_loop_handler: handler,
+      current_model: () => "mock",
+      current_provider: () => "local"
+    });
+    const afterRestart = await restartedRoutes.handle({ method: "GET", path: `/conversations/${conversationId}` });
+    assert.deepEqual(afterRestart.body.messages, detail.body.messages);
+  } finally {
+    await fsp.rm(memoryRoot, { recursive: true, force: true });
+  }
+});
+
 test("derived context summary is labelled, ephemeral, and kept outside saved messages", async () => {
   const calls = [];
   const original = [{ role: "user", content: [{ type: "text", text: "current" }] }];

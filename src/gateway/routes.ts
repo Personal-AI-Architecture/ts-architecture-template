@@ -9,6 +9,8 @@ import {
   type AgentLoopActorHeaders,
   type AgentLoopChatRequest,
   type AgentLoopStreamEvent,
+  type CanonicalMessage,
+  type ContentPart,
   type GatewayPublicMessageRequest,
   type GatewayStreamEvent,
   type ToolDefinition
@@ -289,6 +291,29 @@ function stripApprovalData(data: Record<string, unknown> | undefined): Record<st
   return rest;
 }
 
+function appendTextPart(parts: ContentPart[], text: string): void {
+  if (text.length === 0) {
+    return;
+  }
+  const previous = parts[parts.length - 1];
+  if (previous?.type === "text") {
+    previous.text += text;
+    return;
+  }
+  parts.push({ type: "text", text });
+}
+
+function parseToolResultOutput(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
 export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes {
   if (!config?.conversation_store) {
     throw new Error("Gateway routes require a conversation store.");
@@ -392,10 +417,55 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
         }
       }
     };
+    const persistedConversationId = conversationId;
 
     const stream = (async function* streamGatewayEvents(): AsyncGenerator<GatewayStreamEvent> {
       let assistantContent = "";
       let emittedDone = false;
+      let lastAssistantMessageId: string | undefined;
+      const pendingMessages: CanonicalMessage[] = [];
+      let assistantParts: ContentPart[] = [];
+      let assistantToolCalls: Record<string, Extract<ContentPart, { type: "tool_call" }>> = {};
+
+      function flushAssistantMessage(force = false): void {
+        if (assistantParts.length === 0 && !force) {
+          return;
+        }
+        if (assistantParts.length === 0) {
+          assistantParts = [{ type: "text", text: "" }];
+        }
+        const toolCalls = Object.values(assistantToolCalls).map((part) => ({
+          id: part.id,
+          source_id: part.source_id,
+          name: part.name,
+          arguments: part.arguments
+        }));
+        pendingMessages.push({
+          role: "assistant",
+          content: [...assistantParts],
+          ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {})
+        });
+        assistantParts = [];
+        assistantToolCalls = {};
+      }
+
+      async function persistPendingMessages(): Promise<void> {
+        if (pendingMessages.length === 0) {
+          return;
+        }
+        const messagesToPersist = pendingMessages.splice(0, pendingMessages.length);
+        const result = await config.conversation_store.appendMessages(
+          persistedConversationId,
+          messagesToPersist,
+          { model: selectedModel, provider: selectedProvider }
+        );
+        for (let index = messagesToPersist.length - 1; index >= 0; index -= 1) {
+          if (messagesToPersist[index].role === "assistant") {
+            lastAssistantMessageId = result.message_ids[index];
+            break;
+          }
+        }
+      }
 
       try {
         if (selection.omitted_turn_count > 0) {
@@ -414,6 +484,7 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
             const data = cloneEventData(agentLoopEvent.data) ?? {};
             const text = typeof data.text === "string" ? data.text : typeof data.content === "string" ? data.content : "";
             assistantContent += text;
+            appendTextPart(assistantParts, text);
             yield {
               event: "text-delta",
               data: {
@@ -431,7 +502,46 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
             agentLoopEvent.event === "error"
           ) {
             const data = cloneEventData(agentLoopEvent.data);
+            if (agentLoopEvent.event === "tool-call" && data) {
+              const id = typeof data.id === "string" ? data.id : "";
+              const sourceId = typeof data.source_id === "string" ? data.source_id : "";
+              const name = typeof data.name === "string" ? data.name : "";
+              const argumentsValue = isObjectLike(data.arguments) ? data.arguments : {};
+              if (id && sourceId && name) {
+                const part: Extract<ContentPart, { type: "tool_call" }> = {
+                  type: "tool_call",
+                  id,
+                  source_id: sourceId,
+                  name,
+                  arguments: argumentsValue
+                };
+                assistantToolCalls[id] = part;
+                const existingIndex = assistantParts.findIndex(
+                  (candidate) => candidate.type === "tool_call" && candidate.id === id
+                );
+                if (existingIndex >= 0) {
+                  assistantParts[existingIndex] = part;
+                } else {
+                  assistantParts.push(part);
+                }
+              }
+            }
             if (agentLoopEvent.event === "tool-result") {
+              flushAssistantMessage();
+              if (data && typeof data.id === "string" && data.id.length > 0) {
+                const isError = typeof data.error === "string" && data.error.length > 0;
+                const result = isError ? data.error : parseToolResultOutput(data.output);
+                pendingMessages.push({
+                  role: "tool",
+                  tool_call_id: data.id,
+                  content: [{
+                    type: "tool_result",
+                    tool_call_id: data.id,
+                    result,
+                    ...(isError ? { is_error: true } : {})
+                  }]
+                });
+              }
               const approvals = pickApprovalData(data);
               if (approvals.approval_request) {
                 yield {
@@ -452,24 +562,22 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
               data: { ...(publicData ?? {}), _event_type: agentLoopEvent.event }
             };
             if (agentLoopEvent.event === "error") {
+              flushAssistantMessage();
+              await persistPendingMessages();
               return;
             }
             continue;
           }
 
           if (agentLoopEvent.event === "done") {
-          const assistantMessage = await config.conversation_store.appendMessage(
-            conversationId,
-            "assistant",
-            assistantContent,
-            { model: selectedModel, provider: selectedProvider }
-          );
+          flushAssistantMessage(assistantContent.length > 0 || pendingMessages.length === 0);
+          await persistPendingMessages();
           const completionData: Record<string, unknown> = {
             finish_reason:
               typeof agentLoopEvent.data?.finish_reason === "string" && agentLoopEvent.data.finish_reason.length > 0
                 ? agentLoopEvent.data.finish_reason
                 : "stop",
-            message_id: assistantMessage.message_id
+            ...(lastAssistantMessageId ? { message_id: lastAssistantMessageId } : {})
           };
           emittedDone = true;
           yield {
@@ -485,15 +593,11 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
         }
 
         if (!emittedDone) {
-          const assistantMessage = await config.conversation_store.appendMessage(
-            conversationId,
-            "assistant",
-            assistantContent,
-            { model: selectedModel, provider: selectedProvider }
-          );
+          flushAssistantMessage(assistantContent.length > 0 || pendingMessages.length === 0);
+          await persistPendingMessages();
           const completionData: Record<string, unknown> = {
             finish_reason: "stop",
-            message_id: assistantMessage.message_id
+            ...(lastAssistantMessageId ? { message_id: lastAssistantMessageId } : {})
           };
           yield {
             event: "done",
@@ -501,6 +605,8 @@ export function createGatewayRoutes(config: GatewayRoutesConfig): GatewayRoutes 
           };
         }
       } catch (error) {
+        flushAssistantMessage();
+        await persistPendingMessages();
         emitAuditLog({
           category: "gateway",
           action: "stream_failure",

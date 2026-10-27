@@ -66,6 +66,12 @@ export interface AppendConversationMessageResult {
   messages: CanonicalMessage[];
 }
 
+export interface AppendConversationMessagesResult {
+  conversation_id: string;
+  message_ids: string[];
+  messages: CanonicalMessage[];
+}
+
 export interface GatewayConversationStore {
   createConversation(metadata?: Record<string, unknown>): Promise<{ conversation_id: string }>;
   hasConversation(conversationId: string): Promise<boolean>;
@@ -76,6 +82,11 @@ export interface GatewayConversationStore {
     content: string | ContentPart[],
     provenance?: { model: string; provider: string }
   ): Promise<AppendConversationMessageResult>;
+  appendMessages(
+    conversationId: string,
+    messages: CanonicalMessage[],
+    provenance?: { model: string; provider: string }
+  ): Promise<AppendConversationMessagesResult>;
   listConversations(): Promise<GatewayConversationSummary[]>;
   getConversationDetail(conversationId: string): Promise<GatewayConversationDetail | null>;
 }
@@ -200,9 +211,10 @@ function toConversationMessage(
 
   return {
     id: persisted?.message_id ?? fallbackId,
-    role: message.role === "assistant" ? "assistant" : "user",
+    role: message.role,
     content: typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content,
     created_at: persisted?.created_at ?? fallbackCreatedAt,
+    ...(message.role === "tool" && message.tool_call_id ? { tool_call_id: message.tool_call_id } : {}),
     ...(message.role === "assistant" && persisted?.model && persisted?.provider
       ? { model: persisted.model, provider: persisted.provider }
       : {})
@@ -285,35 +297,38 @@ export function createGatewayConversationStore(config: ConversationStoreConfig):
       return [...record.value.messages];
     },
 
-    async appendMessage(
+    async appendMessages(
       conversationId: string,
-      role: "user" | "assistant",
-      content: string | ContentPart[],
+      messages: CanonicalMessage[],
       provenance?: { model: string; provider: string }
-    ): Promise<AppendConversationMessageResult> {
-      if (role === "assistant" && (!provenance?.model?.trim() || !provenance?.provider?.trim())) {
-        throw new Error("Assistant replies require model and provider provenance.");
+    ): Promise<AppendConversationMessagesResult> {
+      if (!Array.isArray(messages) || messages.length === 0) {
+        throw new Error("At least one conversation message is required.");
+      }
+      for (const message of messages) {
+        if (message.role === "assistant" && (!provenance?.model?.trim() || !provenance?.provider?.trim())) {
+          throw new Error("Assistant replies require model and provider provenance.");
+        }
       }
       const existing = await readConversation(conversationId);
       if (!existing) {
         throw new Error(`Conversation not found: ${conversationId}`);
       }
 
-      const nextMessage = createUserOrAssistantMessage(role, content);
-      const messageId = createMessageId();
-      const nextMessages = [...existing.value.messages, nextMessage];
+      const messageIds = messages.map(() => createMessageId());
+      const nextMessages = [...existing.value.messages, ...messages];
       const metadata = {
         ...existing.value.metadata
       };
       const messageIndex = [
         ...readMessageIndex(metadata),
-        {
-          message_id: messageId,
-          role: nextMessage.role,
-          content: nextMessage.content,
+        ...messages.map((message, index) => ({
+          message_id: messageIds[index],
+          role: message.role,
+          content: message.content,
           created_at: new Date().toISOString(),
-          ...(role === "assistant" ? { model: provenance!.model, provider: provenance!.provider } : {})
-        }
+          ...(message.role === "assistant" ? { model: provenance!.model, provider: provenance!.provider } : {})
+        }))
       ];
       metadata[MESSAGE_INDEX_KEY] = messageIndex;
 
@@ -321,8 +336,23 @@ export function createGatewayConversationStore(config: ConversationStoreConfig):
 
       return {
         conversation_id: conversationId,
-        message_id: messageId,
+        message_ids: messageIds,
         messages: nextMessages
+      };
+    },
+
+    async appendMessage(
+      conversationId: string,
+      role: "user" | "assistant",
+      content: string | ContentPart[],
+      provenance?: { model: string; provider: string }
+    ): Promise<AppendConversationMessageResult> {
+      const nextMessage = createUserOrAssistantMessage(role, content);
+      const result = await this.appendMessages(conversationId, [nextMessage], provenance);
+      return {
+        conversation_id: result.conversation_id,
+        message_id: result.message_ids[0],
+        messages: result.messages
       };
     },
 
