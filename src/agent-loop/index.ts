@@ -208,6 +208,29 @@ function toToolCalls(states: ToolCallState[]): ToolCall[] {
     .filter((toolCall): toolCall is ToolCall => Boolean(toolCall));
 }
 
+function sourceIdForToolName(name: string, tools: ToolDefinition[]): string {
+  const configured = tools.find((tool) => tool.name === name);
+  if (configured?.source && configured.source.trim().length > 0) {
+    return configured.source.trim();
+  }
+
+  const inferred = /^([a-z0-9]+)[_:-]/i.exec(name.trim())?.[1];
+  return inferred && inferred.length > 0 ? inferred : "internal";
+}
+
+function serializeToolOutput(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  try {
+    const serialized = JSON.stringify(value);
+    return typeof serialized === "string" ? serialized : String(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function appendAssistantMessage(messages: CanonicalMessage[], text: string, toolCalls: ToolCall[]): void {
   if (text.length === 0 && toolCalls.length === 0) {
     return;
@@ -301,11 +324,13 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
                 event: "tool-call",
                 data: {
                   id: next.id,
+                  source_id: sourceIdForToolName(next.name, configuredTools),
                   name: next.name,
                   arguments: normalizeToolCall({
                     id: next.id,
                     name: next.name,
-                    arguments: next.arguments
+                    arguments: next.arguments,
+                    source_id: sourceIdForToolName(next.name, configuredTools)
                   })?.arguments ?? {}
                 }
               };
@@ -330,7 +355,10 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
           return;
         }
 
-        const toolCalls = toToolCalls(toolCallStates);
+        const toolCalls = toToolCalls(toolCallStates).map((toolCall) => ({
+          ...toolCall,
+          source_id: toolCall.source_id ?? sourceIdForToolName(toolCall.name, configuredTools)
+        }));
         appendAssistantMessage(messages, assistantText, toolCalls);
 
         if (toolCalls.length === 0) {
@@ -371,6 +399,7 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
                 event: "tool-result",
                 data: {
                   id: toolCallId,
+                  source_id: result.tool_call.source_id ?? sourceIdForToolName(toolName, configuredTools),
                   name: toolName,
                   error: result.failure_code ?? "tool_error",
                   ...approvalFields
@@ -390,8 +419,9 @@ export function createAgentLoop(config: AgentLoopConfig): AgentLoop {
             event: "tool-result",
             data: {
               id: toolCallId,
+              source_id: result.tool_call.source_id ?? sourceIdForToolName(toolName, configuredTools),
               name: toolName,
-              output: result.output,
+              output: serializeToolOutput(result.output),
               ...approvalFields
             }
           };

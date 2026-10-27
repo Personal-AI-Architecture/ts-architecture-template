@@ -10,6 +10,7 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
+  source_id?: string;
   /** Internal marker retained only when a legacy provider payload was malformed. */
   invalid_arguments?: boolean;
 }
@@ -136,6 +137,9 @@ export function normalizeToolCall(value: unknown): ToolCall | undefined {
     id: record.id,
     name,
     arguments: parsed.arguments,
+    ...(typeof record.source_id === "string" && record.source_id.trim().length > 0
+      ? { source_id: record.source_id.trim() }
+      : {}),
     ...(parsed.invalid ? { invalid_arguments: true } : {})
   };
 }
@@ -165,10 +169,11 @@ export interface GatewayConversationSummary {
 
 export interface GatewayConversationMessage {
   id: string;
-  role: "user" | "assistant";
+  role: MessageRole;
   content: ContentPart[];
   created_at: string;
   metadata?: Record<string, unknown>;
+  tool_call_id?: string;
   model?: string;
   provider?: string;
 }
